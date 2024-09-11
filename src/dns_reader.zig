@@ -84,6 +84,12 @@ pub const Dns = struct {
         self.alloc = self.arena.allocator();
         const header = try self.reader.read(DnsHeader);
 
+        var packet: DnsPacket = .{
+            .header = header,
+            .question = undefined,
+            .answer = undefined,
+        };
+
         if (header.questions > 0) {
             var qname = std.ArrayList([]u8).init(self.alloc);
 
@@ -100,18 +106,14 @@ pub const Dns = struct {
             const qtype: u16 = try self.reader.read(u16);
             const qclass: u16 = try self.reader.read(u16);
 
-            return DnsPacket{
-                .header = header,
-                .question = .{
-                    .qname = try qname.toOwnedSlice(),
-                    .qtype = qtype,
-                    .qclass = qclass,
-                },
-                .answer = undefined,
+            packet.question = DnsQuestion{
+                .qname = try qname.toOwnedSlice(),
+                .qtype = qtype,
+                .qclass = qclass,
             };
-        } else {
-            return error.Implement;
         }
+
+        return packet;
     }
 };
 

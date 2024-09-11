@@ -13,10 +13,6 @@ pub fn init(bytes: []const u8) Reader {
     };
 }
 
-pub fn deinit(self: *Reader) void {
-    self.alloc.deinit();
-}
-
 pub fn read(self: *Reader, comptime T: type) !T {
     return switch (@typeInfo(T)) {
         .Int => try self.readInt(T),

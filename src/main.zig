@@ -12,5 +12,5 @@ pub fn main() !void {
     defer dns.deinit();
 
     const packet = try dns.read();
-    std.debug.print("{}\n", .{packet});
+    std.debug.print("{s}\n", .{packet.question.qname});
 }
