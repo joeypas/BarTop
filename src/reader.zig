@@ -34,8 +34,7 @@ fn readInt(self: *Reader, comptime T: type) !T {
     if (self.index + size > self.bytes.len) return error.EndOfStream;
 
     const slice = self.bytes[self.index .. self.index + size];
-    const value: T = @as(*const T, @alignCast(@ptrCast(slice))).*;
-
+    const value: T = std.mem.bytesToValue(T, slice);
     self.index += size;
     return bigToNative(T, value);
 }
