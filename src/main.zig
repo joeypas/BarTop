@@ -1,6 +1,6 @@
 const std = @import("std");
-const Dns = @import("dns_reader.zig");
-const reader = Dns.Dns;
+const Dns = @import("dns.zig");
+const reader = Dns.Parser;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
