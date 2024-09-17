@@ -48,35 +48,61 @@ pub const Header = packed struct(u96) {
         ra: bool,
         z: u3 = 3,
         rcode: ResponseCode,
+
+        pub fn toU16(self: Flags) u16 {
+            return (@as(u16, @intFromBool(self.qr)) << 15) |
+                (@as(u16, @intFromEnum(self.opcode)) << 11) |
+                (@as(u16, @intFromBool(self.aa)) << 10) |
+                (@as(u16, @intFromBool(self.tc)) << 9) |
+                (@as(u16, @intFromBool(self.rd)) << 8) |
+                (@as(u16, @intFromBool(self.ra)) << 7) |
+                (@as(u16, self.z) << 4) |
+                (@as(u16, @intFromEnum(self.rcode)));
+        }
+
+        // This is pretty messy but I want to use my deserializer
+        pub fn getFlags(f: u16) Flags {
+            return Flags{
+                .qr = bigToNative(u8, @intCast((f & 0x8000) >> 15)) != 0,
+                .opcode = @enumFromInt(@as(u4, @truncate(bigToNative(u8, @intCast((f & 0x8000) >> 15))))),
+                .aa = bigToNative(u8, @intCast((f & 0x0400) >> 10)) != 0,
+                .tc = bigToNative(u8, @intCast((f & 0x0200) >> 9)) != 0,
+                .rd = bigToNative(u8, @intCast((f & 0x0100) >> 8)) != 0,
+                .ra = bigToNative(u8, @intCast((f & 0x0080) >> 7)) != 0,
+                .z = 3,
+                .rcode = @enumFromInt(@as(u4, @truncate(bigToNative(u8, @intCast(f & 0x000F))))),
+            };
+        }
     };
 
-    inline fn getFlags(f: u16) Flags {
-        return Flags{
-            .qr = bigToNative(u8, @intCast((f & 0x8000) >> 15)) != 0,
-            .opcode = @enumFromInt(@as(u4, @truncate(bigToNative(u8, @intCast((f & 0x8000) >> 15))))),
-            .aa = bigToNative(u8, @intCast((f & 0x0400) >> 10)) != 0,
-            .tc = bigToNative(u8, @intCast((f & 0x0200) >> 9)) != 0,
-            .rd = bigToNative(u8, @intCast((f & 0x0100) >> 8)) != 0,
-            .ra = bigToNative(u8, @intCast((f & 0x0080) >> 7)) != 0,
-            .z = 3,
-            .rcode = @enumFromInt(@as(u4, @truncate(bigToNative(u8, @intCast(f & 0x000F))))),
-        };
-    }
+    /// Convert a Header to bytes in big endian order
+    pub fn bytes(self: *const Header, allocator: *Allocator) ![]u8 {
+        var builder = std.ArrayList(u8).init(allocator);
+        defer builder.deinit();
 
-    pub fn bytes(self: *const Header) [12]u8 {
-        var header = self.*;
-        header.id = nativeToBig(u16, header.id);
-        header.qcount = nativeToBig(u16, header.qcount);
-        header.ancount = nativeToBig(u16, header.ancount);
-        header.arcount = nativeToBig(u16, header.arcount);
-        return @as([12]u8, @bitCast(header));
-    }
-};
+        // Serialize 'id' field
+        const id_be = u16ToBeBytes(self.id);
+        try builder.appendSlice(&id_be);
 
-pub const DnsQuestion = struct {
-    qname: [][]u8,
-    qtype: u16,
-    qclass: u16,
+        // Serialize 'flags' field
+        const flags_be = u16ToBeBytes(self.flags.toU16());
+        try builder.appendSlice(&flags_be);
+
+        // Serialize 'qcount', 'ancount', 'nscount', 'arcount' fields
+        const qcount_be = u16ToBeBytes(self.qcount);
+        try builder.appendSlice(&qcount_be);
+
+        const ancount_be = u16ToBeBytes(self.ancount);
+        try builder.appendSlice(&ancount_be);
+
+        const nscount_be = u16ToBeBytes(self.nscount);
+        try builder.appendSlice(&nscount_be);
+
+        const arcount_be = u16ToBeBytes(self.arcount);
+        try builder.appendSlice(&arcount_be);
+
+        return builder.toOwnedSlice();
+    }
 };
 
 pub const Question = struct {
@@ -116,6 +142,30 @@ pub const Question = struct {
         any = 255,
         _,
     };
+
+    /// Convert a Question to bytes in big endian order
+    pub fn bytes(self: *const Question, allocator: Allocator) ![]u8 {
+        var builder = std.ArrayList(u8).init(allocator);
+        defer builder.deinit();
+
+        // Serialize qname (domain name)
+        for (self.qname) |label| {
+            const label_len = @as(u8, @intCast(label.len));
+            try builder.append(label_len);
+            try builder.appendSlice(label);
+        }
+        // Terminate qname with a zero-length label
+        try builder.append(0);
+
+        // Serialize qtype and qclass in big-endian order
+        const qtype_be = u16ToBeBytes(@intFromEnum(self.qtype));
+        try builder.appendSlice(&qtype_be);
+
+        const qclass_be = u16ToBeBytes(@intFromEnum(self.qclass));
+        try builder.appendSlice(&qclass_be);
+
+        return builder.toOwnedSlice();
+    }
 };
 
 pub const Record = struct {
@@ -147,12 +197,45 @@ pub const Record = struct {
     };
 
     pub const Class = enum(u16) {
-        in,
+        in = 1,
         cs,
         ch,
         hs,
         _,
     };
+
+    /// Convert a Record to bytes in big endian order
+    pub fn bytes(self: *const Record, allocator: *Allocator) ![]u8 {
+        var builder = std.ArrayList(u8).init(allocator);
+        defer builder.deinit();
+
+        // Serialize name (domain name)
+        for (self.name) |label| {
+            const label_len = @as(u8, @intCast(label.len));
+            try builder.append(label_len);
+            try builder.appendSlice(label);
+        }
+        // Terminate name with a zero-length label
+        try builder.append(0);
+
+        // Serialize type, class, ttl, and rdlength in big-endian order
+        const type_be = u16ToBeBytes(@intFromEnum(self.type));
+        try builder.appendSlice(&type_be);
+
+        const class_be = u16ToBeBytes(@intFromEnum(self.class));
+        try builder.appendSlice(&class_be);
+
+        const ttl_be = u32ToBeBytes(self.ttl);
+        try builder.appendSlice(&ttl_be);
+
+        const rdlength_be = u16ToBeBytes(self.rdlength);
+        try builder.appendSlice(&rdlength_be);
+
+        // Append rdata
+        try builder.appendSlice(self.rdata);
+
+        return builder.toOwnedSlice();
+    }
 };
 
 /// A DNS packet deserializer.
@@ -175,7 +258,7 @@ pub const Parser = struct {
         self.arena.deinit();
     }
 
-    /// Parse `DnsPacket` from string of bytes `data`
+    /// Parse `Message` from string of bytes `data`
     pub fn read(self: *Parser) !Message {
         const alloc = self.arena.allocator();
 
@@ -204,6 +287,26 @@ pub const Parser = struct {
                 try rrs.append(a);
             }
             message.answers = try rrs.toOwnedSlice();
+        }
+        if (message.header.nscount > 0) {
+            var nss = std.ArrayList(Record).init(alloc);
+
+            for (0..@as(usize, message.header.nscount)) |i| {
+                _ = i;
+                const a = try self.readRecord();
+                try nss.append(a);
+            }
+            message.authorities = try nss.toOwnedSlice();
+        }
+        if (message.header.arcount > 0) {
+            var ars = std.ArrayList(Record).init(alloc);
+
+            for (0..@as(usize, message.header.arcount)) |i| {
+                _ = i;
+                const a = try self.readRecord();
+                try ars.append(a);
+            }
+            message.additionals = try ars.toOwnedSlice();
         }
 
         return message;
@@ -254,7 +357,7 @@ pub const Parser = struct {
 
         return .{
             .id = header.id,
-            .flags = Header.getFlags(header.flags),
+            .flags = Header.Flags.getFlags(header.flags),
             .qcount = header.qdcount,
             .ancount = header.ancount,
             .nscount = header.nscount,
@@ -303,6 +406,24 @@ pub const Parser = struct {
     }
 };
 
+/// Helper to convert u16 to bytes
+fn u16ToBeBytes(value: u16) [2]u8 {
+    return [2]u8{
+        @as(u8, @intCast((value >> 8) & 0xff)),
+        @as(u8, @intCast(value & 0xff)),
+    };
+}
+
+/// Helper to convert u32 to bytes
+fn u32ToBeBytes(value: u32) [4]u8 {
+    return [4]u8{
+        @as(u8, @intCast((value >> 24) & 0xff)),
+        @as(u8, @intCast((value >> 16) & 0xff)),
+        @as(u8, @intCast((value >> 8) & 0xff)),
+        @as(u8, @intCast(value & 0xff)),
+    };
+}
+
 test "read" {
     const allocator = std.testing.allocator;
     const data = [_]u8{ 0xdb, 0x42, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x03, 0x77, 0x77, 0x77, 0x0c, 0x6e, 0x6f, 0x72, 0x74, 0x68, 0x65, 0x61, 0x73, 0x74, 0x65, 0x72, 0x6e, 0x03, 0x65, 0x64, 0x75, 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x58, 0x00, 0x04, 0x9b, 0x21, 0x11, 0x44 };
@@ -321,5 +442,9 @@ test "read" {
         packet.answers[0].rdata[3],
     });
 
+    const bytes = try packet.questions[0].bytes(allocator);
+    defer allocator.free(bytes);
+
     std.debug.print("{s}\nAddr: {s}\n", .{ packet.answers[0].name, addr });
+    std.debug.print("Bytes: {x}\n", .{bytes});
 }
