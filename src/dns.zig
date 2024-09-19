@@ -12,6 +12,48 @@ pub const Message = struct {
     answers: []const Record,
     authorities: []const Record,
     additionals: []const Record,
+
+    /// Serializes the entire DNS message into a byte array.
+    pub fn bytes(self: *const Message, allocator: Allocator) ![]u8 {
+        var builder = std.ArrayList(u8).init(allocator);
+        defer builder.deinit();
+
+        // Serialize header
+        const header_bytes = try self.header.bytes(allocator);
+        defer allocator.free(header_bytes);
+
+        try builder.appendSlice(header_bytes);
+
+        // Serialize questions
+        for (self.questions) |question| {
+            const question_bytes = try question.bytes(allocator);
+            defer allocator.free(question_bytes);
+            try builder.appendSlice(question_bytes);
+        }
+
+        // Serialize answers
+        for (self.answers) |answer| {
+            const answer_bytes = try answer.bytes(allocator);
+            defer allocator.free(answer_bytes);
+            try builder.appendSlice(answer_bytes);
+        }
+
+        // Serialize authorities
+        for (self.authorities) |authority| {
+            const authority_bytes = try authority.bytes(allocator);
+            defer allocator.free(authority_bytes);
+            try builder.appendSlice(authority_bytes);
+        }
+
+        // Serialize additionals
+        for (self.additionals) |additional| {
+            const additional_bytes = try additional.bytes(allocator);
+            defer allocator.free(additional_bytes);
+            try builder.appendSlice(additional_bytes);
+        }
+
+        return builder.toOwnedSlice();
+    }
 };
 
 pub const Header = packed struct(u96) {
@@ -69,14 +111,14 @@ pub const Header = packed struct(u96) {
                 .tc = bigToNative(u8, @intCast((f & 0x0200) >> 9)) != 0,
                 .rd = bigToNative(u8, @intCast((f & 0x0100) >> 8)) != 0,
                 .ra = bigToNative(u8, @intCast((f & 0x0080) >> 7)) != 0,
-                .z = 3,
+                .z = 0,
                 .rcode = @enumFromInt(@as(u4, @truncate(bigToNative(u8, @intCast(f & 0x000F))))),
             };
         }
     };
 
     /// Convert a Header to bytes in big endian order
-    pub fn bytes(self: *const Header, allocator: *Allocator) ![]u8 {
+    pub fn bytes(self: *const Header, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -205,7 +247,7 @@ pub const Record = struct {
     };
 
     /// Convert a Record to bytes in big endian order
-    pub fn bytes(self: *const Record, allocator: *Allocator) ![]u8 {
+    pub fn bytes(self: *const Record, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -442,9 +484,10 @@ test "read" {
         packet.answers[0].rdata[3],
     });
 
-    const bytes = try packet.questions[0].bytes(allocator);
+    const bytes = try packet.bytes(allocator);
     defer allocator.free(bytes);
 
     std.debug.print("{s}\nAddr: {s}\n", .{ packet.answers[0].name, addr });
     std.debug.print("Bytes: {x}\n", .{bytes});
+    std.debug.print("Origional: {x}\n", .{data});
 }
