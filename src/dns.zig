@@ -300,21 +300,26 @@ pub const Parser = struct {
         self.arena.deinit();
     }
 
+    // TODO: Properly Handle Errors/When to return null
     /// Parse `Message` from string of bytes `data`
-    pub fn read(self: *Parser) !Message {
+    pub fn read(self: *Parser) !?Message {
         const alloc = self.arena.allocator();
 
         var message: Message = std.mem.zeroInit(Message, .{});
 
         // Parse the packet header
-        message.header = try self.readHeader();
+        message.header = self.readHeader() catch {
+            return null;
+        };
 
         if (message.header.qcount > 0) {
             var qs = std.ArrayList(Question).init(alloc);
 
             for (0..@as(usize, message.header.qcount)) |i| {
                 _ = i;
-                const q = try self.readQuestion();
+                const q = self.readQuestion() catch {
+                    return null;
+                };
                 try qs.append(q);
             }
             message.questions = try qs.toOwnedSlice();
@@ -325,7 +330,9 @@ pub const Parser = struct {
 
             for (0..@as(usize, message.header.ancount)) |i| {
                 _ = i;
-                const a = try self.readRecord();
+                const a = self.readRecord() catch {
+                    return null;
+                };
                 try rrs.append(a);
             }
             message.answers = try rrs.toOwnedSlice();
@@ -335,7 +342,9 @@ pub const Parser = struct {
 
             for (0..@as(usize, message.header.nscount)) |i| {
                 _ = i;
-                const a = try self.readRecord();
+                const a = self.readRecord() catch {
+                    return null;
+                };
                 try nss.append(a);
             }
             message.authorities = try nss.toOwnedSlice();
@@ -345,7 +354,9 @@ pub const Parser = struct {
 
             for (0..@as(usize, message.header.arcount)) |i| {
                 _ = i;
-                const a = try self.readRecord();
+                const a = self.readRecord() catch {
+                    return null;
+                };
                 try ars.append(a);
             }
             message.additionals = try ars.toOwnedSlice();
@@ -473,7 +484,7 @@ test "read" {
     var dns = Parser.init(&data, allocator);
     defer dns.deinit();
 
-    const packet = try dns.read();
+    const packet = try dns.read() orelse undefined;
 
     var buf: [32]u8 = undefined;
 

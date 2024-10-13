@@ -41,7 +41,7 @@ pub fn main() !void {
         const respose_len = try handleDnsQuery(buffer[0..recv_len], buffer[recv_len..], allocator);
         _ = try posix.sendto(
             sock,
-            buffer[0..respose_len],
+            buffer[recv_len .. recv_len + respose_len],
             0,
             &from_addr,
             from_addrlen,
@@ -58,16 +58,15 @@ fn handleDnsQuery(query: []const u8, response: []u8, allocator: Allocator) !usiz
     var parser = dns.Parser.init(query, allocator);
     defer parser.deinit();
 
-    const packet = parser.read() catch
-        dns.Message{
-        .header = undefined,
-        .questions = undefined,
-        .answers = undefined,
-        .authorities = undefined,
-        .additionals = undefined,
-    };
+    if (try parser.read()) |packet| {
+        std.debug.print("{any}\n", .{packet});
 
-    _ = packet;
-    std.mem.copyForwards(u8, response, query);
-    return query.len;
+        std.mem.copyForwards(u8, response, query);
+        return query.len;
+    } else {
+        std.debug.print("Not a DNS Packet: {s}\n", .{query});
+        const message = "Not a DNS packet!";
+        std.mem.copyForwards(u8, response, message);
+        return message.len;
+    }
 }
