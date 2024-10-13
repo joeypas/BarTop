@@ -489,5 +489,5 @@ test "read" {
 
     std.debug.print("{s}\nAddr: {s}\n", .{ packet.answers[0].name, addr });
     std.debug.print("Bytes: {x}\n", .{bytes});
-    std.debug.print("Origional: {x}\n", .{data});
+    std.debug.print("Original: {x}\n", .{data});
 }
