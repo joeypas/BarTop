@@ -5,11 +5,11 @@ const posix = std.posix;
 const Allocator = std.mem.Allocator;
 const Thread = std.Thread;
 const Mutex = std.Thread.Mutex;
-const StringHashMap = std.StringHashMap;
+const AutoHashMap = std.AutoHashMap;
 const LRU = @import("util/lru.zig").LRU;
 
 var dns_cache: LRU([]const u8) = undefined;
-var dns_store: StringHashMap([]const u8) = undefined;
+var dns_store: AutoHashMap(u64, []const u8) = undefined;
 var dns_mutex: Mutex = Mutex{};
 
 pub fn main() !void {
@@ -20,11 +20,11 @@ pub fn main() !void {
     dns_cache = LRU([]const u8).init(allocator, 100);
     defer dns_cache.deinit();
 
-    dns_store = StringHashMap([]const u8).init(allocator);
+    dns_store = AutoHashMap(u64, []const u8).init(allocator);
     defer dns_store.deinit();
 
     // TODO: Change this line with local dns info
-    try dns_store.put("example.com", &[4]u8{ 192, 168, 1, 1 });
+    try dns_store.put(hashFn("examplecom"), &[4]u8{ 192, 168, 1, 1 });
 
     const addr = try net.Address.parseIp("127.0.0.1", 5553);
 
@@ -40,10 +40,18 @@ pub fn main() !void {
 
     std.debug.print("Listen on {any}\n", .{addr});
 
-    const max_packet_size = 1024;
+    const max_packet_size = 512;
+
+    var pool = std.ArrayList(Thread).init(allocator);
+    defer pool.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
     var buffer: [max_packet_size]u8 = undefined;
 
-    while (true) {
+    var count: usize = 0;
+    while (count < 5) : (count += 1) {
         var from_addr: posix.sockaddr = undefined;
         var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
         const recv_len = try posix.recvfrom(
@@ -56,8 +64,11 @@ pub fn main() !void {
         std.debug.print("Received {d} bytes from {any};\n", .{ recv_len, from_addr });
 
         // Spawn thread to handle DNS query
-        var handle_thread = try Thread.spawn(.{ .allocator = allocator }, handleDnsQuery, .{ buffer[0..recv_len], buffer[recv_len..], from_addr, from_addrlen, sock, allocator });
-        handle_thread.detach();
+        const handle_thread = try Thread.spawn(.{}, handleDnsQuery, .{ buffer[0..], recv_len, from_addr, from_addrlen, sock, alloc });
+        try pool.append(handle_thread);
+    }
+    for (pool.items) |thread| {
+        thread.join();
     }
 }
 
@@ -69,7 +80,13 @@ fn hashFn(data: []const u8) u64 {
     return hash;
 }
 
-fn handleDnsQuery(query: []const u8, response: []u8, from_addr: posix.sockaddr, from_addrlen: posix.socklen_t, sock: posix.socket_t, allocator: Allocator) !void {
+fn handleDnsQuery(buffer: []u8, recv_len: usize, from_addr: posix.sockaddr, from_addrlen: posix.socklen_t, sock: posix.socket_t, allocator: Allocator) !void {
+    dns_mutex.lock();
+    defer dns_mutex.unlock();
+
+    const query = buffer[0..recv_len];
+    var response = buffer[recv_len..];
+
     const header_len = 12;
     if (query.len < header_len) {
         return error.InvalidDNSQuery;
@@ -82,10 +99,6 @@ fn handleDnsQuery(query: []const u8, response: []u8, from_addr: posix.sockaddr, 
 
     if (try parser.read()) |packet| {
         //std.debug.print("Received DNS Packet: {any}\n", .{packet});
-
-        dns_mutex.lock();
-        defer dns_mutex.unlock();
-
         const question = packet.questions[0];
         const qname_hash = hashFn(question.qname);
 
@@ -96,9 +109,9 @@ fn handleDnsQuery(query: []const u8, response: []u8, from_addr: posix.sockaddr, 
             std.mem.copyForwards(u8, response, cached_response);
             std.debug.print("Got: {x}\n", .{cached_response});
             len = cached_response.len;
-        } else if (dns_store.get(question.qname)) |address| {
+        } else if (dns_store.get(qname_hash)) |address| {
             // Return local response
-            std.debug.print("Found in local store: {s} -> {s}\n", .{ question.qname, address });
+            std.debug.print("Found in local store: {s} -> {any}\n", .{ question.qname, address });
 
             var response_packet = createDnsResponse(packet, question.qname, address);
             const response_bytes = try response_packet.bytes(allocator);
@@ -111,7 +124,10 @@ fn handleDnsQuery(query: []const u8, response: []u8, from_addr: posix.sockaddr, 
             std.debug.print("Not found in local store, querying external server...\n", .{});
 
             const external_len = try queryExternalServer(query, response);
-            try dns_cache.put(qname_hash, response[0..external_len]);
+            const res = try allocator.alloc(u8, external_len);
+            std.debug.print("Put: {x}\n", .{response[0..external_len]});
+            std.mem.copyForwards(u8, res, response[0..external_len]);
+            try dns_cache.put(qname_hash, res);
             len = external_len;
         }
     } else {
