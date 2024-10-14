@@ -148,7 +148,7 @@ pub const Header = packed struct(u96) {
 };
 
 pub const Question = struct {
-    qname: [][]u8,
+    qname: []const u8,
     qtype: QType,
     qclass: QClass,
 
@@ -191,11 +191,8 @@ pub const Question = struct {
         defer builder.deinit();
 
         // Serialize qname (domain name)
-        for (self.qname) |label| {
-            const label_len = @as(u8, @intCast(label.len));
-            try builder.append(label_len);
-            try builder.appendSlice(label);
-        }
+        try builder.append(@as(u8, @intCast(self.qname.len)));
+        try builder.appendSlice(self.qname);
         // Terminate qname with a zero-length label
         try builder.append(0);
 
@@ -211,12 +208,12 @@ pub const Question = struct {
 };
 
 pub const Record = struct {
-    name: [][]u8,
+    name: []const u8,
     type: Type,
     class: Class,
     ttl: u32,
     rdlength: u16,
-    rdata: []u8,
+    rdata: []const u8,
 
     pub const Type = enum(u16) {
         a = 1,
@@ -252,11 +249,9 @@ pub const Record = struct {
         defer builder.deinit();
 
         // Serialize name (domain name)
-        for (self.name) |label| {
-            const label_len = @as(u8, @intCast(label.len));
-            try builder.append(label_len);
-            try builder.appendSlice(label);
-        }
+        try builder.append(@as(u8, @intCast(self.name.len)));
+        try builder.appendSlice(self.name);
+
         // Terminate name with a zero-length label
         try builder.append(0);
 
@@ -420,9 +415,9 @@ pub const Parser = struct {
 
     /// Reads name/qname field from packet, returns list of strings
     /// *Internal use only
-    inline fn handleName(self: *Parser) ![][]u8 {
+    inline fn handleName(self: *Parser) ![]u8 {
         const alloc = self.arena.allocator();
-        var list = std.ArrayList([]u8).init(alloc);
+        var list = std.ArrayList(u8).init(alloc);
 
         const pointer: u16 = try self.reader.read(u16);
         if ((pointer & 0xF) == 0xc) {
@@ -447,13 +442,14 @@ pub const Parser = struct {
 
     /// Reads name fields of packet
     /// *Internal use only
-    inline fn read2DList(self: *Parser, reader: *Reader, list: *std.ArrayList([]u8)) !void {
+    inline fn read2DList(self: *Parser, reader: *Reader, list: *std.ArrayList(u8)) !void {
         const alloc = self.arena.allocator();
         var size: u8 = try reader.read(u8);
         var i: usize = 0;
         while (size != 0x00) : (i += 1) {
-            try list.append(try alloc.alloc(u8, @as(usize, size)));
-            try readList(list.items[i], reader, @as(usize, size));
+            const temp = try alloc.alloc(u8, @as(usize, size));
+            try readList(temp[0..], reader, @as(usize, size));
+            try list.appendSlice(temp);
             size = try reader.read(u8);
         }
     }

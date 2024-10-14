@@ -69,7 +69,7 @@ pub fn LRU(T: type) type {
             self.addToHead(entry);
         }
 
-        pub fn get(self: *Self, key: u64) ?u64 {
+        pub fn get(self: *Self, key: u64) ?T {
             if (self.map.get(key)) |entry| {
                 self.moveToHead(entry);
                 return entry.value;
