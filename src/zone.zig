@@ -75,13 +75,18 @@ pub const Zone = struct {
 
                 if (tokens.next()) |name| {
                     std.debug.print("Name: {s}\n", .{name});
+                    var name_split = std.mem.splitAny(u8, name, ".");
+                    var names = ArrayList([]const u8).init(allocator);
+                    while (name_split.next()) |n| {
+                        try names.append(n);
+                    }
                     if (tokens.next()) |class| {
                         if (tokens.next()) |typ| {
 
                             // Read record data (name, ttl, class, typ)
                             const rdata = trimmed[tokens.index..];
                             try self.records.append(Record{
-                                .name = name,
+                                .name = try names.toOwnedSlice(),
                                 .ttl = self.context.default_ttl,
                                 .class = getClass(class),
                                 .type = getType(typ),
@@ -94,6 +99,10 @@ pub const Zone = struct {
             }
 
             line_maybe = try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 512);
+        }
+
+        if (line_maybe) |line| {
+            allocator.free(line);
         }
     }
 };

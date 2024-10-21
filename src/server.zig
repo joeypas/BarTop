@@ -24,7 +24,13 @@ pub fn main() !void {
     defer dns_store.deinit();
 
     // TODO: Change this line with local dns info
-    try dns_store.put(hashFn("examplecom"), &[4]u8{ 192, 168, 1, 1 });
+    var example = std.ArrayList([]const u8).init(allocator);
+    defer example.deinit();
+    try example.append("example");
+    try example.append("com");
+    const put = try example.toOwnedSlice();
+    defer allocator.free(put);
+    try dns_store.put(hashFn(put), &[4]u8{ 192, 168, 1, 1 });
 
     const addr = try net.Address.parseIp("127.0.0.1", 5553);
 
@@ -64,7 +70,7 @@ pub fn main() !void {
         std.debug.print("Received {d} bytes from {any};\n", .{ recv_len, from_addr });
 
         // Spawn thread to handle DNS query
-        const handle_thread = try Thread.spawn(.{}, handleDnsQuery, .{ buffer[0..], recv_len, from_addr, from_addrlen, sock, alloc });
+        const handle_thread = try Thread.spawn(.{ .allocator = alloc }, handleDnsQuery, .{ buffer[0..], recv_len, from_addr, from_addrlen, sock, alloc });
         try pool.append(handle_thread);
     }
     for (pool.items) |thread| {
@@ -72,10 +78,12 @@ pub fn main() !void {
     }
 }
 
-fn hashFn(data: []const u8) u64 {
+fn hashFn(data: [][]const u8) u64 {
     var hash: u64 = 5381;
-    for (data) |byte| {
-        hash = ((hash << 5) + hash) + byte;
+    for (data) |list| {
+        for (list) |byte| {
+            hash = ((hash << 5) + hash) + byte;
+        }
     }
     return hash;
 }
@@ -100,6 +108,7 @@ fn handleDnsQuery(buffer: []u8, recv_len: usize, from_addr: posix.sockaddr, from
     if (try parser.read()) |packet| {
         //std.debug.print("Received DNS Packet: {any}\n", .{packet});
         const question = packet.questions[0];
+
         const qname_hash = hashFn(question.qname);
 
         if (dns_cache.get(qname_hash)) |cached_response| {
@@ -148,7 +157,7 @@ fn handleDnsQuery(buffer: []u8, recv_len: usize, from_addr: posix.sockaddr, from
     );
 }
 
-fn createDnsResponse(packet: dns.Message, qname: []const u8, address: []const u8) dns.Message {
+inline fn createDnsResponse(packet: dns.Message, qname: [][]const u8, address: []const u8) dns.Message {
     return dns.Message{
         .header = dns.Header{
             .id = packet.header.id,
@@ -182,7 +191,7 @@ fn createDnsResponse(packet: dns.Message, qname: []const u8, address: []const u8
     };
 }
 
-fn queryExternalServer(query: []const u8, response: []u8) !usize {
+inline fn queryExternalServer(query: []const u8, response: []u8) !usize {
     // TODO: Placeholder implementation
     const external_server_ip = "8.8.8.8";
     const external_server_port = 53;
