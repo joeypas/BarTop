@@ -15,6 +15,8 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
+    const clap = b.dependency("clap", .{});
+
     var list: [2]*std.Build.Step.Compile = undefined;
 
     list[0] = b.addExecutable(.{
@@ -30,6 +32,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    list[1].root_module.addImport("clap", clap.module("clap"));
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

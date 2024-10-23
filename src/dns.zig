@@ -460,7 +460,7 @@ pub const Parser = struct {
 };
 
 /// Helper to convert u16 to bytes
-fn u16ToBeBytes(value: u16) [2]u8 {
+pub fn u16ToBeBytes(value: u16) [2]u8 {
     return [2]u8{
         @as(u8, @intCast((value >> 8) & 0xff)),
         @as(u8, @intCast(value & 0xff)),
@@ -468,7 +468,7 @@ fn u16ToBeBytes(value: u16) [2]u8 {
 }
 
 /// Helper to convert u32 to bytes
-fn u32ToBeBytes(value: u32) [4]u8 {
+pub fn u32ToBeBytes(value: u32) [4]u8 {
     return [4]u8{
         @as(u8, @intCast((value >> 24) & 0xff)),
         @as(u8, @intCast((value >> 16) & 0xff)),
