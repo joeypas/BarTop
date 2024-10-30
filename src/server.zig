@@ -82,10 +82,6 @@ pub fn deinit(self: *Server) void {
     }
     self.dns_cache.deinit();
     self.dns_store.deinit();
-    //dns_mutex.lock();
-    //defer dns_mutex.unlock();
-    //self.pool.deinit();
-    //self.arena.deinit();
 }
 
 pub fn run(self: *Server) !void {
@@ -206,15 +202,12 @@ const Client = struct {
 
         var len: usize = 0;
 
-        var parser = dns.Parser.init(query, self.allocator);
-        //defer parser.deinit();
+        var packet = try dns.Message.fromBytes(self.allocator, query);
+        defer packet.deinit();
 
-        //std.debug.print("{s}: {any}: {any}\n", .{ packet.questions[0].qname, packet.header.flags, packet.questions[0] });
         dns_mutex.lock();
         defer dns_mutex.unlock();
         //std.debug.print("Received DNS Packet: {any}\n", .{packet});
-        var packet = try parser.read();
-        defer packet.deinit();
 
         const question_maybe = packet.questions.getLastOrNull();
         if (question_maybe) |question| {

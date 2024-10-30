@@ -7,7 +7,7 @@ const ArrayList = std.ArrayList;
 const Record = @import("dns.zig").Record;
 
 pub const Context = struct {
-    origin: [][]const u8,
+    origin: [][]u8,
     default_ttl: u32,
     class: Record.Class,
 };
@@ -44,7 +44,7 @@ pub const Zone = struct {
     records: ArrayList(Record),
     context: Context,
     state: State,
-    last: [][]const u8,
+    last: [][]u8,
 
     pub fn init(allocator: Allocator, file_name: []const u8) !Zone {
         return .{
@@ -76,14 +76,14 @@ pub const Zone = struct {
                 var tokens = mem.splitAny(u8, trimmed, " \t");
                 const first = tokens.next() orelse undefined;
                 if (std.mem.eql(u8, first, "$ORIGIN")) {
-                    var names = ArrayList([]const u8).init(allocator);
+                    var names = ArrayList([]u8).init(allocator);
                     var name_split = std.mem.splitAny(
                         u8,
                         tokens.next() orelse undefined,
                         ".",
                     );
                     while (name_split.next()) |n| {
-                        try names.append(n);
+                        try names.append(@constCast(n));
                     }
                     self.context.origin = try names.toOwnedSlice();
                 } else if (std.mem.eql(u8, first, "$TTL")) {
@@ -94,7 +94,10 @@ pub const Zone = struct {
                     );
                 }
             } else {
-                try self.records.append(try self.handleLine(line));
+                const record = try self.records.addOne();
+                record.*.allocator = allocator;
+                record.*.name = ArrayList([]u8).init(allocator);
+                try self.handleLine(line, record);
             }
 
             line_maybe = try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 512);
@@ -105,32 +108,31 @@ pub const Zone = struct {
         }
     }
 
-    fn handleLine(self: *Zone, line: []u8) !Record {
+    fn handleLine(self: *Zone, line: []u8, record: *Record) !void {
         self.state = .ttl;
         const allocator = self.arena.allocator();
         var index: usize = 0;
-        var ret: Record = undefined;
         var found_ttl = false;
         var found_class = false;
 
         if (std.ascii.isWhitespace(line[0])) {
-            ret.name = self.last;
+            try record.nameAppendSlice(self.last);
         } else {
             var tokens = std.mem.tokenize(u8, line, " \t");
             var name_split = std.mem.splitAny(u8, tokens.next().?, ".");
-            var names = ArrayList([]const u8).init(allocator);
+            var names = ArrayList([]u8).init(allocator);
             if (name_split.peek()) |first| {
                 if (std.mem.eql(u8, first, "@")) {
                     try names.appendSlice(self.context.origin);
                 } else {
                     while (name_split.next()) |n| {
-                        try names.append(n);
+                        try names.append(@constCast(n));
                     }
                 }
             }
             index += tokens.index;
-            ret.name = try names.toOwnedSlice();
-            self.last = ret.name;
+            try record.nameAppendSlice(names.items);
+            self.last = record.name.items;
         }
 
         const trimmed = mem.trim(u8, line[index..], " ");
@@ -151,11 +153,11 @@ pub const Zone = struct {
                             break :blk;
                         }
                         found_ttl = true;
-                        ret.ttl = try std.fmt.parseInt(u32, token, 10);
+                        record.*.ttl = try std.fmt.parseInt(u32, token, 10);
                         _ = tokens.next();
                         if (found_class) {
                             self.state = .type;
-                            ret.class = self.context.class;
+                            record.*.class = self.context.class;
                             break :blk;
                         }
                         self.state = .class;
@@ -164,19 +166,19 @@ pub const Zone = struct {
                     .class => {
                         const c = getClass(token);
                         self.context.class = c;
-                        ret.class = c;
+                        record.*.class = c;
                         found_class = true;
                         if (found_ttl) {
                             _ = tokens.next();
                             self.state = .type;
                             break :blk;
                         }
-                        ret.ttl = self.context.default_ttl;
+                        record.*.ttl = self.context.default_ttl;
                         self.state = .ttl;
                         break :blk;
                     },
                     .type => {
-                        ret.type = getType(token);
+                        record.*.type = getType(token);
                         self.state = .rdata;
                         _ = tokens.next();
                         break :blk;
@@ -185,7 +187,7 @@ pub const Zone = struct {
                         var rdata = ArrayList(u8).init(allocator);
                         std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
                         try rdata.appendSlice(trimmed[tokens.index..]);
-                        ret.rdata = try rdata.toOwnedSlice();
+                        record.*.rdata = try rdata.toOwnedSlice();
                         _ = tokens.next();
                         self.state = .done;
                     },
@@ -193,7 +195,6 @@ pub const Zone = struct {
                 }
             }
         }
-        return ret;
     }
 
     pub fn getRecords(self: *Zone, t: Record.Type, c: Record.Class, allocator: Allocator) ![]Record {
@@ -220,7 +221,7 @@ test "read" {
     for (zone.records.items) |record| {
         std.debug.print(
             "Record: ( {s}, {d}, {any}, {any}, {s} )\n",
-            .{ record.name, record.ttl, record.class, record.type, record.rdata },
+            .{ record.name.items, record.ttl, record.class, record.type, record.rdata },
         );
     }
 }

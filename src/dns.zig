@@ -45,6 +45,11 @@ pub const Message = struct {
         self.additionals.deinit();
     }
 
+    pub fn fromBytes(allocator: Allocator, data: []const u8) !Message {
+        var parser = Parser.init(allocator, data);
+        return try parser.read();
+    }
+
     /// Serializes the entire DNS message into a byte array.
     pub fn bytes(self: *Message, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
@@ -87,6 +92,8 @@ pub const Message = struct {
         return builder.toOwnedSlice();
     }
 
+    /// Initializes a Question and appends it to internal ArrayList
+    /// returns pointer to new element
     pub fn addQuestion(self: *Message) !*Question {
         var question = try self.questions.addOne();
         question.allocator = self.allocator;
@@ -94,6 +101,8 @@ pub const Message = struct {
         return question;
     }
 
+    /// Initializes an Answer Record and appends it to internal ArrayList
+    /// returns pointer to new element
     pub fn addAnswer(self: *Message) !*Record {
         var answer = try self.answers.addOne();
         answer.allocator = self.allocator;
@@ -101,6 +110,8 @@ pub const Message = struct {
         return answer;
     }
 
+    /// Initializes an Authority Record and appends it to internal ArrayList
+    /// returns pointer to new element
     pub fn addAuthority(self: *Message) !*Record {
         var authority = try self.authorities.addOne();
         authority.allocator = self.allocator;
@@ -108,6 +119,8 @@ pub const Message = struct {
         return authority;
     }
 
+    /// Initializes an Additional Record and appends it to internal ArrayList
+    /// returns pointer to new element
     pub fn addAdditional(self: *Message) !*Record {
         var additional = try self.additionals.addOne();
         additional.allocator = self.allocator;
@@ -367,6 +380,9 @@ pub const Record = struct {
 
     pub fn nameAppendSlice(self: *Record, slice: [][]u8) !void {
         for (slice) |part| {
+            // Because of the way that a record is deinitialized, a record must own memory
+            // of the slices contained in name to avoid an invalid free,
+            // and the easiest way to do this is by copying the slice
             try self.name.append(try self.allocator.alloc(u8, part.len));
             std.mem.copyForwards(u8, self.name.getLast(), part);
         }
@@ -374,14 +390,13 @@ pub const Record = struct {
 };
 
 /// A DNS packet deserializer.
-/// This struct internally stores a `std.heap.ArenaAllocator` for memory management.
-/// To free all memory allocated in this struct call `deinit`
-pub const Parser = struct {
+/// Memory is only allocated with a call to read
+const Parser = struct {
     reader: Reader,
     alloc: Allocator,
 
     /// Does not need to be deinitialized
-    pub fn init(data: []const u8, alloc: Allocator) Parser {
+    pub fn init(alloc: Allocator, data: []const u8) Parser {
         return .{
             .reader = Reader.init(data),
             .alloc = alloc,
@@ -474,7 +489,7 @@ pub const Parser = struct {
     /// *Internal use only
     inline fn handleName(self: *Parser, list: *ArrayList([]u8)) !void {
         //var list = std.ArrayList([]u8).init(self.alloc);
-        errdefer list.deinit();
+        //errdefer list.deinit();
 
         const pointer: u16 = try self.reader.read(u16);
         if ((pointer & 0xF) == 0xc) {
@@ -532,9 +547,7 @@ test "read" {
     const allocator = std.testing.allocator;
     const data = [_]u8{ 0xdb, 0x42, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x03, 0x77, 0x77, 0x77, 0x0c, 0x6e, 0x6f, 0x72, 0x74, 0x68, 0x65, 0x61, 0x73, 0x74, 0x65, 0x72, 0x6e, 0x03, 0x65, 0x64, 0x75, 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x58, 0x00, 0x04, 0x9b, 0x21, 0x11, 0x44 };
 
-    var dns = Parser.init(&data, allocator);
-
-    var packet = try dns.read();
+    var packet = try Message.fromBytes(allocator, &data);
     defer packet.deinit();
 
     var buf: [32]u8 = undefined;

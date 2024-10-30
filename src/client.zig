@@ -1,7 +1,6 @@
 const std = @import("std");
 const Dns = @import("dns.zig");
 const clap = @import("clap");
-const reader = Dns.Parser;
 const rand = std.crypto.random;
 
 pub fn getQname(allocator: std.mem.Allocator) ![][]u8 {
@@ -100,9 +99,7 @@ pub fn main() !void {
 
     const recv_bytes = try std.posix.recv(sock, buf[0..], 0);
 
-    var parser = reader.init(buf[0..recv_bytes], allocator);
-    //defer parser.deinit();
-    var message = try parser.read();
+    var message = try Dns.Message.fromBytes(allocator, buf[0..recv_bytes]);
     defer message.deinit();
 
     if (message.header.id != packet.header.id) {
