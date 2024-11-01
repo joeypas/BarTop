@@ -40,7 +40,7 @@ pub fn getClass(class: []const u8) Record.Class {
 
 pub const Zone = struct {
     file: fs.File,
-    arena: Arena,
+    allocator: Allocator,
     records: ArrayList(Record),
     context: Context,
     state: State,
@@ -53,22 +53,29 @@ pub const Zone = struct {
             .context = undefined,
             .state = .ttl,
             .last = undefined,
-            .arena = Arena.init(allocator),
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Zone) void {
         self.file.close();
+        for (self.context.origin) |item| {
+            self.allocator.free(item);
+        }
+        self.allocator.free(self.context.origin);
+        for (self.records.items) |item| {
+            item.deinit();
+        }
         self.records.deinit();
-        self.arena.allocator().free(self.context.origin);
-        self.arena.deinit();
     }
 
     pub fn read(self: *Zone) !void {
         var reader = self.file.reader();
-        const allocator = self.arena.allocator();
 
-        var line_maybe = try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 512);
+        var line_arena = Arena.init(self.allocator);
+        defer line_arena.deinit();
+
+        var line_maybe: ?[]u8 = try reader.readUntilDelimiterOrEofAlloc(line_arena.allocator(), '\n', 512);
 
         while (line_maybe) |line| {
             const trimmed = mem.trim(u8, line, " \t\n\r");
@@ -76,14 +83,16 @@ pub const Zone = struct {
                 var tokens = mem.splitAny(u8, trimmed, " \t");
                 const first = tokens.next() orelse undefined;
                 if (std.mem.eql(u8, first, "$ORIGIN")) {
-                    var names = ArrayList([]u8).init(allocator);
+                    var names = ArrayList([]u8).init(self.allocator);
+                    defer names.deinit();
                     var name_split = std.mem.splitAny(
                         u8,
                         tokens.next() orelse undefined,
                         ".",
                     );
                     while (name_split.next()) |n| {
-                        try names.append(@constCast(n));
+                        try names.append(try self.allocator.alloc(u8, n.len));
+                        std.mem.copyForwards(u8, names.getLast(), n);
                     }
                     self.context.origin = try names.toOwnedSlice();
                 } else if (std.mem.eql(u8, first, "$TTL")) {
@@ -95,22 +104,21 @@ pub const Zone = struct {
                 }
             } else {
                 const record = try self.records.addOne();
-                record.*.allocator = allocator;
-                record.*.name = ArrayList([]u8).init(allocator);
+                record.*.allocator = self.allocator;
+                record.*.name = ArrayList([]u8).init(self.allocator);
                 try self.handleLine(line, record);
             }
-
-            line_maybe = try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 512);
+            _ = line_arena.reset(.free_all);
+            line_maybe = try reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 512);
         }
 
-        if (line_maybe) |line| {
-            allocator.free(line);
-        }
+        //if (line_maybe) |line| {
+        //    self.allocator.free(line);
+        //}
     }
 
     fn handleLine(self: *Zone, line: []u8, record: *Record) !void {
         self.state = .ttl;
-        const allocator = self.arena.allocator();
         var index: usize = 0;
         var found_ttl = false;
         var found_class = false;
@@ -120,18 +128,17 @@ pub const Zone = struct {
         } else {
             var tokens = std.mem.tokenize(u8, line, " \t");
             var name_split = std.mem.splitAny(u8, tokens.next().?, ".");
-            var names = ArrayList([]u8).init(allocator);
             if (name_split.peek()) |first| {
                 if (std.mem.eql(u8, first, "@")) {
-                    try names.appendSlice(self.context.origin);
+                    try record.nameAppendSlice(self.context.origin);
                 } else {
                     while (name_split.next()) |n| {
-                        try names.append(@constCast(n));
+                        try record.name.append(try record.allocator.alloc(u8, n.len));
+                        std.mem.copyForwards(u8, record.name.getLast(), n);
                     }
                 }
             }
             index += tokens.index;
-            try record.nameAppendSlice(names.items);
             self.last = record.name.items;
         }
 
@@ -184,7 +191,7 @@ pub const Zone = struct {
                         break :blk;
                     },
                     .rdata => {
-                        var rdata = ArrayList(u8).init(allocator);
+                        var rdata = ArrayList(u8).init(self.allocator);
                         std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
                         try rdata.appendSlice(trimmed[tokens.index..]);
                         record.*.rdata = try rdata.toOwnedSlice();

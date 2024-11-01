@@ -51,45 +51,74 @@ pub const Message = struct {
     }
 
     /// Serializes the entire DNS message into a byte array.
-    pub fn bytes(self: *Message, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Message, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
         // Serialize header
-        const header_bytes = try self.header.bytes(allocator);
+        const header_bytes = try self.header.bytesAlloc(allocator);
         defer allocator.free(header_bytes);
 
         try builder.appendSlice(header_bytes);
 
         // Serialize questions
         for (self.questions.items) |question| {
-            const question_bytes = try question.bytes(allocator);
+            const question_bytes = try question.bytesAlloc(allocator);
             defer allocator.free(question_bytes);
             try builder.appendSlice(question_bytes);
         }
 
         // Serialize answers
         for (self.answers.items) |answer| {
-            const answer_bytes = try answer.bytes(allocator);
+            const answer_bytes = try answer.bytesAlloc(allocator);
             defer allocator.free(answer_bytes);
             try builder.appendSlice(answer_bytes);
         }
 
         // Serialize authorities
         for (self.authorities.items) |authority| {
-            const authority_bytes = try authority.bytes(allocator);
+            const authority_bytes = try authority.bytesAlloc(allocator);
             defer allocator.free(authority_bytes);
             try builder.appendSlice(authority_bytes);
         }
 
         // Serialize additionals
         for (self.additionals.items) |additional| {
-            const additional_bytes = try additional.bytes(allocator);
+            const additional_bytes = try additional.bytesAlloc(allocator);
             defer allocator.free(additional_bytes);
             try builder.appendSlice(additional_bytes);
         }
 
         return builder.toOwnedSlice();
+    }
+
+    pub fn bytes(self: *Message, buf: []u8) ![]u8 {
+        var size: usize = 0;
+
+        const header_bytes = try self.header.bytes(buf[0..]);
+        size += header_bytes.len;
+
+        for (self.questions.items) |item| {
+            const item_bytes = try item.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        for (self.answers.items) |item| {
+            const item_bytes = try item.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        for (self.authorities.items) |item| {
+            const item_bytes = try item.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        for (self.additionals.items) |item| {
+            const item_bytes = try item.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        return buf[0..size];
     }
 
     /// Initializes a Question and appends it to internal ArrayList
@@ -191,7 +220,7 @@ pub const Header = packed struct(u96) {
     };
 
     /// Convert a Header to bytes in big endian order
-    pub fn bytes(self: *const Header, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *const Header, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -217,6 +246,31 @@ pub const Header = packed struct(u96) {
         try builder.appendSlice(&arcount_be);
 
         return builder.toOwnedSlice();
+    }
+    pub fn bytes(self: *const Header, buf: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var size: usize = 0;
+        var writer = fbs.writer();
+
+        const id_be = u16ToBeBytes(self.id);
+        size += try writer.write(&id_be);
+
+        const flags_be = u16ToBeBytes(self.flags.toU16());
+        size += try writer.write(&flags_be);
+
+        const qcount_be = u16ToBeBytes(self.qcount);
+        size += try writer.write(&qcount_be);
+
+        const ancount_be = u16ToBeBytes(self.ancount);
+        size += try writer.write(&ancount_be);
+
+        const nscount_be = u16ToBeBytes(self.nscount);
+        size += try writer.write(&nscount_be);
+
+        const arcount_be = u16ToBeBytes(self.arcount);
+        size += try writer.write(&arcount_be);
+
+        return buf[0..size];
     }
 };
 
@@ -267,7 +321,7 @@ pub const Question = struct {
     }
 
     /// Convert a Question to bytes in big endian order
-    pub fn bytes(self: *const Question, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *const Question, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -290,6 +344,27 @@ pub const Question = struct {
         try builder.appendSlice(&qclass_be);
 
         return builder.toOwnedSlice();
+    }
+
+    pub fn bytes(self: *const Question, buf: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var size: usize = 0;
+        var writer = fbs.writer();
+        for (self.qname.items) |label| {
+            try writer.writeByte(@as(u8, @intCast(label.len)));
+            size += 1;
+            size += try writer.write(label);
+        }
+        try writer.writeByte(0);
+        size += 1;
+
+        const type_be = u16ToBeBytes(@intFromEnum(self.qtype));
+        size += try writer.write(&type_be);
+
+        const class_be = u16ToBeBytes(@intFromEnum(self.qclass));
+        size += try writer.write(&class_be);
+
+        return buf[0..size];
     }
 
     pub fn qnameAppendSlice(self: *Question, slice: [][]u8) !void {
@@ -346,7 +421,7 @@ pub const Record = struct {
     }
 
     /// Convert a Record to bytes in big endian order
-    pub fn bytes(self: *const Record, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *const Record, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -376,6 +451,35 @@ pub const Record = struct {
         try builder.appendSlice(self.rdata);
 
         return builder.toOwnedSlice();
+    }
+
+    pub fn bytes(self: *const Record, buf: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var size: usize = 0;
+        var writer = fbs.writer();
+        for (self.name.items) |label| {
+            try writer.writeByte(@as(u8, @intCast(label.len)));
+            size += 1;
+            size += try writer.write(label);
+        }
+        try writer.writeByte(0);
+        size += 1;
+
+        const type_be = u16ToBeBytes(@intFromEnum(self.type));
+        size += try writer.write(&type_be);
+
+        const class_be = u16ToBeBytes(@intFromEnum(self.class));
+        size += try writer.write(&class_be);
+
+        const ttl_be = u32ToBeBytes(self.ttl);
+        size += try writer.write(&ttl_be);
+
+        const rdlength_be = u16ToBeBytes(self.rdlength);
+        size += try writer.write(&rdlength_be);
+
+        size += try writer.write(self.rdata);
+
+        return buf[0..size];
     }
 
     pub fn nameAppendSlice(self: *Record, slice: [][]u8) !void {
@@ -559,7 +663,13 @@ test "read" {
         packet.answers.items[0].rdata[3],
     });
 
-    const bytes = try packet.bytes(allocator);
+    var buf2: [512]u8 = undefined;
+
+    const bytes = try packet.bytesAlloc(allocator);
+    const bytes2 = try packet.bytes(&buf2);
+
+    assert(std.mem.eql(u8, bytes, bytes2));
+
     defer allocator.free(bytes);
 
     std.debug.print("{s}\nAddr: {s}\n", .{ packet.answers.items[0].name.items, addr });
