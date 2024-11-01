@@ -75,7 +75,7 @@ pub fn main() !void {
     };
 
     const question = try packet.addQuestion();
-    try question.qnameAppendSlice(qname);
+    try question.qnameAppendSlice2D(qname);
     question.*.qtype = Dns.Question.QType.a;
     question.*.qclass = Dns.Question.QClass.in;
 

@@ -353,10 +353,10 @@ pub const Question = struct {
         var fbs = std.io.fixedBufferStream(buf);
         var size: usize = 0;
         var writer = fbs.writer();
-        for (self.qname.items) |label| {
-            try writer.writeByte(@as(u8, @intCast(label.len)));
+        for (self.qname.items) |*label| {
+            try writer.writeByte(@as(u8, @intCast(label.items.len)));
             size += 1;
-            size += try writer.write(label);
+            size += try writer.write(label.items);
         }
         try writer.writeByte(0);
         size += 1;
@@ -370,7 +370,13 @@ pub const Question = struct {
         return buf[0..size];
     }
 
-    pub fn qnameAppendSlice(self: *Question, slice: [][]u8) !void {
+    pub fn qnameAppendSlice(self: *Question, slice: []const u8) !void {
+        const list = try self.qname.addOne();
+        list.* = ArrayList(u8).init(self.allocator);
+        try list.appendSlice(slice);
+    }
+
+    pub fn qnameAppendSlice2D(self: *Question, slice: [][]const u8) !void {
         for (slice) |part| {
             // Because of the way that a record is deinitialized, a record must own memory
             // of the slices contained in name to avoid an invalid free,
@@ -480,10 +486,10 @@ pub const Record = struct {
         var fbs = std.io.fixedBufferStream(buf);
         var size: usize = 0;
         var writer = fbs.writer();
-        for (self.name.items) |label| {
-            try writer.writeByte(@as(u8, @intCast(label.len)));
+        for (self.name.items) |*label| {
+            try writer.writeByte(@as(u8, @intCast(label.items.len)));
             size += 1;
-            size += try writer.write(label);
+            size += try writer.write(label.items);
         }
         try writer.writeByte(0);
         size += 1;
@@ -500,12 +506,18 @@ pub const Record = struct {
         const rdlength_be = u16ToBeBytes(self.rdlength);
         size += try writer.write(&rdlength_be);
 
-        size += try writer.write(self.rdata);
+        size += try writer.write(self.rdata.items);
 
         return buf[0..size];
     }
 
-    pub fn nameAppendSlice(self: *Record, slice: [][]u8) !void {
+    pub fn nameAppendSlice(self: *Record, slice: []const u8) !void {
+        const list = try self.name.addOne();
+        list.* = ArrayList(u8).init(self.allocator);
+        try list.appendSlice(slice);
+    }
+
+    pub fn nameAppendSlice2D(self: *Record, slice: [][]const u8) !void {
         for (slice) |part| {
             // Because of the way that a record is deinitialized, a record must own memory
             // of the slices contained in name to avoid an invalid free,

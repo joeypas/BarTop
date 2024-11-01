@@ -7,7 +7,7 @@ const ArrayList = std.ArrayList;
 const Record = @import("dns.zig").Record;
 
 pub const Context = struct {
-    origin: [][]u8,
+    origin: [][]const u8,
     default_ttl: u32,
     class: Record.Class,
 };
@@ -44,7 +44,7 @@ pub const Zone = struct {
     records: ArrayList(Record),
     context: Context,
     state: State,
-    last: [][]u8,
+    last: ArrayList(ArrayList(u8)),
 
     pub fn init(allocator: Allocator, file_name: []const u8) !Zone {
         return .{
@@ -52,7 +52,7 @@ pub const Zone = struct {
             .records = ArrayList(Record).init(allocator),
             .context = undefined,
             .state = .ttl,
-            .last = undefined,
+            .last = ArrayList(ArrayList(u8)).init(allocator),
             .allocator = allocator,
         };
     }
@@ -63,9 +63,13 @@ pub const Zone = struct {
             self.allocator.free(item);
         }
         self.allocator.free(self.context.origin);
-        for (self.records.items) |item| {
+        for (self.records.items) |*item| {
             item.deinit();
         }
+        for (self.last.items) |*item| {
+            item.deinit();
+        }
+        self.last.deinit();
         self.records.deinit();
     }
 
@@ -104,8 +108,9 @@ pub const Zone = struct {
                 }
             } else {
                 const record = try self.records.addOne();
-                record.*.allocator = self.allocator;
-                record.*.name = ArrayList([]u8).init(self.allocator);
+                record.allocator = self.allocator;
+                record.name = ArrayList(ArrayList(u8)).init(self.allocator);
+                record.rdata = ArrayList(u8).init(self.allocator);
                 try self.handleLine(line, record);
             }
             _ = line_arena.reset(.free_all);
@@ -117,6 +122,12 @@ pub const Zone = struct {
         //}
     }
 
+    fn cloneLast(self: *Zone, other: ArrayList(ArrayList(u8))) !void {
+        for (other.items) |item| {
+            try self.last.append(try item.clone());
+        }
+    }
+
     fn handleLine(self: *Zone, line: []u8, record: *Record) !void {
         self.state = .ttl;
         var index: usize = 0;
@@ -124,22 +135,21 @@ pub const Zone = struct {
         var found_class = false;
 
         if (std.ascii.isWhitespace(line[0])) {
-            try record.nameAppendSlice(self.last);
+            try record.nameCloneOther(self.last);
         } else {
             var tokens = std.mem.tokenize(u8, line, " \t");
             var name_split = std.mem.splitAny(u8, tokens.next().?, ".");
             if (name_split.peek()) |first| {
                 if (std.mem.eql(u8, first, "@")) {
-                    try record.nameAppendSlice(self.context.origin);
+                    try record.*.nameAppendSlice2D(self.context.origin);
                 } else {
                     while (name_split.next()) |n| {
-                        try record.name.append(try record.allocator.alloc(u8, n.len));
-                        std.mem.copyForwards(u8, record.name.getLast(), n);
+                        try record.nameAppendSlice(n);
                     }
                 }
             }
             index += tokens.index;
-            self.last = record.name.items;
+            try self.cloneLast(record.name);
         }
 
         const trimmed = mem.trim(u8, line[index..], " ");
@@ -192,9 +202,10 @@ pub const Zone = struct {
                     },
                     .rdata => {
                         var rdata = ArrayList(u8).init(self.allocator);
+                        defer rdata.deinit();
                         std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
                         try rdata.appendSlice(trimmed[tokens.index..]);
-                        record.*.rdata = try rdata.toOwnedSlice();
+                        try record.rdataAppendSlice(rdata.items);
                         _ = tokens.next();
                         self.state = .done;
                     },
@@ -225,10 +236,12 @@ test "read" {
 
     std.debug.print("Size: {d}\n", .{zone.records.items.len});
 
-    for (zone.records.items) |record| {
+    for (zone.records.items) |*record| {
+        const name = try record.nameToString();
+        defer allocator.free(name);
         std.debug.print(
-            "Record: ( {s}, {d}, {any}, {any}, {s} )\n",
-            .{ record.name.items, record.ttl, record.class, record.type, record.rdata },
+            "Record: ( {s}, {d}, {any}, {any}, {any} )\n",
+            .{ name, record.ttl, record.class, record.type, record.rdata.items },
         );
     }
 }
