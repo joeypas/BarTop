@@ -82,6 +82,7 @@ pub fn main() !void {
     //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
     //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
     const data = try packet.bytes(allocator);
+    std.debug.print("Data len: {d}\n", .{data.len});
     defer allocator.free(data);
     //_ = packet;
     const addr = try std.net.Address.parseIp("127.0.0.1", 5553);
@@ -112,6 +113,8 @@ pub fn main() !void {
             .{std.meta.fieldNames(Dns.Header.ResponseCode)[@intFromEnum(message.header.flags.rcode)]},
         );
     } else {
-        std.debug.print("RECIEVED=> {s}: {any}", .{ message.answers.items[0].name.items, message.answers.items[0].rdata });
+        const name = try message.answers.items[0].nameToString();
+        defer allocator.free(name);
+        std.debug.print("RECIEVED=> {s}: {any}", .{ name, message.answers.items[0].rdata.items });
     }
 }
