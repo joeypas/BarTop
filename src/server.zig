@@ -166,7 +166,7 @@ const Client = struct {
             ) catch {};
             var message = createDnsError(self.allocator.allocator(), .format_error);
             defer message.deinit();
-            const bytes = message.bytes(self.allocator.allocator()) catch "  ";
+            const bytes = message.bytesAlloc(self.allocator.allocator()) catch "  ";
             defer self.allocator.allocator().free(bytes);
             _ = posix.sendto(
                 self.socket,
@@ -231,7 +231,7 @@ const Client = struct {
 
                 try updateDnsResponse(&response_packet, question.*, address[0..]);
 
-                const response_bytes = try response_packet.bytes(alloc);
+                const response_bytes = try response_packet.bytesAlloc(alloc);
                 defer alloc.free(response_bytes);
 
                 std.mem.copyForwards(u8, response, response_bytes);

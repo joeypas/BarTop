@@ -62,28 +62,28 @@ pub const Message = struct {
         try builder.appendSlice(header_bytes);
 
         // Serialize questions
-        for (self.questions.items) |question| {
+        for (self.questions.items) |*question| {
             const question_bytes = try question.bytesAlloc(allocator);
             defer allocator.free(question_bytes);
             try builder.appendSlice(question_bytes);
         }
 
         // Serialize answers
-        for (self.answers.items) |answer| {
+        for (self.answers.items) |*answer| {
             const answer_bytes = try answer.bytesAlloc(allocator);
             defer allocator.free(answer_bytes);
             try builder.appendSlice(answer_bytes);
         }
 
         // Serialize authorities
-        for (self.authorities.items) |authority| {
+        for (self.authorities.items) |*authority| {
             const authority_bytes = try authority.bytesAlloc(allocator);
             defer allocator.free(authority_bytes);
             try builder.appendSlice(authority_bytes);
         }
 
         // Serialize additionals
-        for (self.additionals.items) |additional| {
+        for (self.additionals.items) |*additional| {
             const additional_bytes = try additional.bytesAlloc(allocator);
             defer allocator.free(additional_bytes);
             try builder.appendSlice(additional_bytes);
@@ -98,22 +98,22 @@ pub const Message = struct {
         const header_bytes = try self.header.bytes(buf[0..]);
         size += header_bytes.len;
 
-        for (self.questions.items) |item| {
+        for (self.questions.items) |*item| {
             const item_bytes = try item.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
-        for (self.answers.items) |item| {
+        for (self.answers.items) |*item| {
             const item_bytes = try item.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
-        for (self.authorities.items) |item| {
+        for (self.authorities.items) |*item| {
             const item_bytes = try item.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
-        for (self.additionals.items) |item| {
+        for (self.additionals.items) |*item| {
             const item_bytes = try item.bytes(buf[size..]);
             size += item_bytes.len;
         }
@@ -223,7 +223,7 @@ pub const Header = packed struct(u96) {
     };
 
     /// Convert a Header to bytes in big endian order
-    pub fn bytesAlloc(self: *const Header, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Header, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -250,7 +250,7 @@ pub const Header = packed struct(u96) {
 
         return builder.toOwnedSlice();
     }
-    pub fn bytes(self: *const Header, buf: []u8) ![]u8 {
+    pub fn bytes(self: *Header, buf: []u8) ![]u8 {
         var fbs = std.io.fixedBufferStream(buf);
         var size: usize = 0;
         var writer = fbs.writer();
@@ -324,7 +324,7 @@ pub const Question = struct {
     }
 
     /// Convert a Question to bytes in big endian order
-    pub fn bytesAlloc(self: *const Question, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Question, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -349,7 +349,7 @@ pub const Question = struct {
         return builder.toOwnedSlice();
     }
 
-    pub fn bytes(self: *const Question, buf: []u8) ![]u8 {
+    pub fn bytes(self: *Question, buf: []u8) ![]u8 {
         var fbs = std.io.fixedBufferStream(buf);
         var size: usize = 0;
         var writer = fbs.writer();
@@ -444,7 +444,7 @@ pub const Record = struct {
     }
 
     /// Convert a Record to bytes in big endian order
-    pub fn bytesAlloc(self: *const Record, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Record, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -476,7 +476,7 @@ pub const Record = struct {
         return builder.toOwnedSlice();
     }
 
-    pub fn bytes(self: *const Record, buf: []u8) ![]u8 {
+    pub fn bytes(self: *Record, buf: []u8) ![]u8 {
         var fbs = std.io.fixedBufferStream(buf);
         var size: usize = 0;
         var writer = fbs.writer();
