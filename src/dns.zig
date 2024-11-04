@@ -1,58 +1,165 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
+const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 const Reader = @import("reader.zig");
 const bigToNative = std.mem.bigToNative;
 const nativeToBig = std.mem.nativeToBig;
 
+pub const Name = ArrayList(ArrayList(u8));
+
 pub const Message = struct {
     header: Header,
-    questions: []const Question,
-    answers: []const Record,
-    authorities: []const Record,
-    additionals: []const Record,
+    questions: ArrayList(Question),
+    answers: ArrayList(Record),
+    authorities: ArrayList(Record),
+    additionals: ArrayList(Record),
+    allocator: Allocator,
+
+    pub fn init(allocator: Allocator) Message {
+        return .{
+            .header = std.mem.zeroInit(Header, .{}),
+            .questions = ArrayList(Question).init(allocator),
+            .answers = ArrayList(Record).init(allocator),
+            .authorities = ArrayList(Record).init(allocator),
+            .additionals = ArrayList(Record).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Message) void {
+        for (self.questions.items) |*q| {
+            q.deinit();
+        }
+        self.questions.deinit();
+        for (self.answers.items) |*r| {
+            r.deinit();
+        }
+        self.answers.deinit();
+        for (self.authorities.items) |*r| {
+            r.deinit();
+        }
+        self.authorities.deinit();
+        for (self.additionals.items) |*r| {
+            r.deinit();
+        }
+        self.additionals.deinit();
+    }
+
+    pub fn fromBytes(allocator: Allocator, data: []const u8) !Message {
+        var parser = Parser.init(allocator, data);
+        return try parser.read();
+    }
 
     /// Serializes the entire DNS message into a byte array.
-    pub fn bytes(self: *const Message, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Message, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
         // Serialize header
-        const header_bytes = try self.header.bytes(allocator);
+        const header_bytes = try self.header.bytesAlloc(allocator);
         defer allocator.free(header_bytes);
 
         try builder.appendSlice(header_bytes);
 
         // Serialize questions
-        for (self.questions) |question| {
-            const question_bytes = try question.bytes(allocator);
+        for (self.questions.items) |*question| {
+            const question_bytes = try question.bytesAlloc(allocator);
             defer allocator.free(question_bytes);
             try builder.appendSlice(question_bytes);
         }
 
         // Serialize answers
-        for (self.answers) |answer| {
-            const answer_bytes = try answer.bytes(allocator);
+        for (self.answers.items) |*answer| {
+            const answer_bytes = try answer.bytesAlloc(allocator);
             defer allocator.free(answer_bytes);
             try builder.appendSlice(answer_bytes);
         }
 
         // Serialize authorities
-        for (self.authorities) |authority| {
-            const authority_bytes = try authority.bytes(allocator);
+        for (self.authorities.items) |*authority| {
+            const authority_bytes = try authority.bytesAlloc(allocator);
             defer allocator.free(authority_bytes);
             try builder.appendSlice(authority_bytes);
         }
 
         // Serialize additionals
-        for (self.additionals) |additional| {
-            const additional_bytes = try additional.bytes(allocator);
+        for (self.additionals.items) |*additional| {
+            const additional_bytes = try additional.bytesAlloc(allocator);
             defer allocator.free(additional_bytes);
             try builder.appendSlice(additional_bytes);
         }
 
         return builder.toOwnedSlice();
+    }
+
+    pub fn bytes(self: *Message, buf: []u8) ![]u8 {
+        var size: usize = 0;
+
+        const header_bytes = try self.header.bytes(buf[0..]);
+        size += header_bytes.len;
+
+        for (self.questions.items) |*item| {
+            const item_bytes = try item.*.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        for (self.answers.items) |*item| {
+            const item_bytes = try item.*.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        for (self.authorities.items) |*item| {
+            const item_bytes = try item.*.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        for (self.additionals.items) |*item| {
+            const item_bytes = try item.*.bytes(buf[size..]);
+            size += item_bytes.len;
+        }
+
+        return buf[0..size];
+    }
+
+    /// Initializes a Question and appends it to internal ArrayList
+    /// returns pointer to new element
+    pub fn addQuestion(self: *Message) !*Question {
+        var question = try self.questions.addOne();
+        question.allocator = self.allocator;
+        question.qname = ArrayList(ArrayList(u8)).init(self.allocator);
+        return question;
+    }
+
+    /// Initializes an Answer Record and appends it to internal ArrayList
+    /// returns pointer to new element
+    pub fn addAnswer(self: *Message) !*Record {
+        var answer = try self.answers.addOne();
+        answer.allocator = self.allocator;
+        answer.name = ArrayList(ArrayList(u8)).init(self.allocator);
+        answer.rdata = ArrayList(u8).init(self.allocator);
+        return answer;
+    }
+
+    /// Initializes an Authority Record and appends it to internal ArrayList
+    /// returns pointer to new element
+    pub fn addAuthority(self: *Message) !*Record {
+        var authority = try self.authorities.addOne();
+        authority.allocator = self.allocator;
+        authority.name = ArrayList(ArrayList(u8)).init(self.allocator);
+        authority.rdata = ArrayList(u8).init(self.allocator);
+        return authority;
+    }
+
+    /// Initializes an Additional Record and appends it to internal ArrayList
+    /// returns pointer to new element
+    pub fn addAdditional(self: *Message) !*Record {
+        var additional = try self.additionals.addOne();
+        additional.allocator = self.allocator;
+        additional.name = ArrayList(ArrayList(u8)).init(self.allocator);
+        additional.rdata = ArrayList(u8).init(self.allocator);
+        return additional;
     }
 };
 
@@ -118,7 +225,7 @@ pub const Header = packed struct(u96) {
     };
 
     /// Convert a Header to bytes in big endian order
-    pub fn bytes(self: *const Header, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Header, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
@@ -145,12 +252,38 @@ pub const Header = packed struct(u96) {
 
         return builder.toOwnedSlice();
     }
+    pub fn bytes(self: *Header, buf: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var size: usize = 0;
+        var writer = fbs.writer();
+
+        const id_be = u16ToBeBytes(self.id);
+        size += try writer.write(&id_be);
+
+        const flags_be = u16ToBeBytes(self.flags.toU16());
+        size += try writer.write(&flags_be);
+
+        const qcount_be = u16ToBeBytes(self.qcount);
+        size += try writer.write(&qcount_be);
+
+        const ancount_be = u16ToBeBytes(self.ancount);
+        size += try writer.write(&ancount_be);
+
+        const nscount_be = u16ToBeBytes(self.nscount);
+        size += try writer.write(&nscount_be);
+
+        const arcount_be = u16ToBeBytes(self.arcount);
+        size += try writer.write(&arcount_be);
+
+        return buf[0..size];
+    }
 };
 
 pub const Question = struct {
-    qname: [][]const u8,
+    qname: ArrayList(ArrayList(u8)),
     qtype: QType,
     qclass: QClass,
+    allocator: Allocator,
 
     pub const QType = enum(u16) {
         a = 1,
@@ -185,18 +318,25 @@ pub const Question = struct {
         _,
     };
 
+    pub fn deinit(self: *Question) void {
+        for (self.qname.items) |part| {
+            part.deinit();
+        }
+        self.qname.deinit();
+    }
+
     /// Convert a Question to bytes in big endian order
-    pub fn bytes(self: *const Question, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Question, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
         // Serialize qname (domain name)
-        for (self.qname) |label| {
-            if (label.len > 256) {
+        for (self.qname.items) |label| {
+            if (label.items.len > 256) {
                 break;
             }
-            try builder.append(@as(u8, @intCast(label.len)));
-            try builder.appendSlice(label);
+            try builder.append(@as(u8, @intCast(label.items.len)));
+            try builder.appendSlice(label.items);
         }
         // Terminate qname with a zero-length label
         try builder.append(0);
@@ -210,15 +350,70 @@ pub const Question = struct {
 
         return builder.toOwnedSlice();
     }
+
+    pub fn bytes(self: *Question, buf: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var size: usize = 0;
+        var writer = fbs.writer();
+        for (self.qname.items) |*label| {
+            try writer.writeByte(@as(u8, @intCast(label.items.len)));
+            size += 1;
+            size += try writer.write(label.items);
+        }
+        try writer.writeByte(0);
+        size += 1;
+
+        const type_be = u16ToBeBytes(@intFromEnum(self.qtype));
+        size += try writer.write(&type_be);
+
+        const class_be = u16ToBeBytes(@intFromEnum(self.qclass));
+        size += try writer.write(&class_be);
+
+        return buf[0..size];
+    }
+
+    pub fn qnameAppendSlice(self: *Question, slice: []const u8) !void {
+        const list = try self.qname.addOne();
+        list.* = ArrayList(u8).init(self.allocator);
+        try list.appendSlice(slice);
+    }
+
+    pub fn qnameAppendSlice2D(self: *Question, slice: [][]const u8) !void {
+        for (slice) |part| {
+            // Because of the way that a record is deinitialized, a record must own memory
+            // of the slices contained in name to avoid an invalid free,
+            // and the easiest way to do this is by copying the slice
+            const list = try self.qname.addOne();
+            list.* = ArrayList(u8).init(self.allocator);
+            try list.appendSlice(part);
+        }
+    }
+
+    pub fn qnameCloneOther(self: *Question, other: ArrayList(ArrayList(u8))) !void {
+        for (other.items) |item| {
+            try self.qname.append(try item.clone());
+        }
+    }
+
+    pub fn qnameToStringAlloc(self: *Question, allocator: Allocator) ![]const u8 {
+        var tmp = ArrayList(u8).init(allocator);
+        for (self.qname.items) |item| {
+            try tmp.appendSlice(item.items);
+            try tmp.append('.');
+        }
+
+        return tmp.toOwnedSlice();
+    }
 };
 
 pub const Record = struct {
-    name: [][]const u8,
+    name: ArrayList(ArrayList(u8)),
     type: Type,
     class: Class,
     ttl: u32,
     rdlength: u16,
-    rdata: []const u8,
+    rdata: ArrayList(u8),
+    allocator: Allocator,
 
     pub const Type = enum(u16) {
         a = 1,
@@ -248,15 +443,23 @@ pub const Record = struct {
         _,
     };
 
+    pub fn deinit(self: *Record) void {
+        for (self.name.items) |part| {
+            part.deinit();
+        }
+        self.name.deinit();
+        self.rdata.deinit();
+    }
+
     /// Convert a Record to bytes in big endian order
-    pub fn bytes(self: *const Record, allocator: Allocator) ![]u8 {
+    pub fn bytesAlloc(self: *Record, allocator: Allocator) ![]u8 {
         var builder = std.ArrayList(u8).init(allocator);
         defer builder.deinit();
 
         // Serialize name (domain name)
-        for (self.name) |label| {
-            try builder.append(@as(u8, @intCast(label.len)));
-            try builder.appendSlice(label);
+        for (self.name.items) |label| {
+            try builder.append(@as(u8, @intCast(label.items.len)));
+            try builder.appendSlice(label.items);
         }
 
         // Terminate name with a zero-length label
@@ -276,124 +479,157 @@ pub const Record = struct {
         try builder.appendSlice(&rdlength_be);
 
         // Append rdata
-        try builder.appendSlice(self.rdata);
+        try builder.appendSlice(self.rdata.items);
 
         return builder.toOwnedSlice();
+    }
+
+    pub fn bytes(self: *Record, buf: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buf);
+        var size: usize = 0;
+        var writer = fbs.writer();
+        for (self.name.items) |*label| {
+            try writer.writeByte(@as(u8, @intCast(label.items.len)));
+            size += 1;
+            size += try writer.write(label.items);
+        }
+        try writer.writeByte(0);
+        size += 1;
+
+        const type_be = u16ToBeBytes(@intFromEnum(self.type));
+        size += try writer.write(&type_be);
+
+        const class_be = u16ToBeBytes(@intFromEnum(self.class));
+        size += try writer.write(&class_be);
+
+        const ttl_be = u32ToBeBytes(self.ttl);
+        size += try writer.write(&ttl_be);
+
+        const rdlength_be = u16ToBeBytes(self.rdlength);
+        size += try writer.write(&rdlength_be);
+
+        size += try writer.write(self.rdata.items);
+
+        return buf[0..size];
+    }
+
+    pub fn nameAppendSlice(self: *Record, slice: []const u8) !void {
+        const list = try self.name.addOne();
+        list.* = ArrayList(u8).init(self.allocator);
+        try list.appendSlice(slice);
+    }
+
+    pub fn nameAppendSlice2D(self: *Record, slice: [][]const u8) !void {
+        for (slice) |part| {
+            // Because of the way that a record is deinitialized, a record must own memory
+            // of the slices contained in name to avoid an invalid free,
+            // and the easiest way to do this is by copying the slice
+            const list = try self.name.addOne();
+            list.* = ArrayList(u8).init(self.allocator);
+            try list.appendSlice(part);
+        }
+    }
+
+    pub fn nameCloneOther(self: *Record, other: ArrayList(ArrayList(u8))) !void {
+        for (other.items) |item| {
+            try self.name.append(try item.clone());
+        }
+    }
+
+    pub fn rdataAppendSlice(self: *Record, slice: []const u8) !void {
+        try self.rdata.appendSlice(slice);
+        //self.rdata.shrinkAndFree(slice.len);
+    }
+
+    pub fn rdataCloneOther(self: *Record, other: ArrayList(u8)) !void {
+        self.rdata.deinit();
+        self.rdata = try other.clone();
+    }
+
+    pub fn nameToStringAlloc(self: *Record, allocator: Allocator) ![]const u8 {
+        var tmp = ArrayList(u8).init(allocator);
+        for (self.name.items) |item| {
+            try tmp.appendSlice(item.items);
+            try tmp.append('.');
+        }
+
+        return tmp.toOwnedSlice();
     }
 };
 
 /// A DNS packet deserializer.
-/// This struct internally stores a `std.heap.ArenaAllocator` for memory management.
-/// To free all memory allocated in this struct call `deinit`
-pub const Parser = struct {
+/// Memory is only allocated with a call to read
+const Parser = struct {
     reader: Reader,
-    arena: Arena,
+    alloc: Allocator,
 
-    /// Deinitialize with `deinit`
-    pub fn init(data: []const u8, alloc: Allocator) Parser {
+    /// Does not need to be deinitialized
+    pub fn init(alloc: Allocator, data: []const u8) Parser {
         return .{
             .reader = Reader.init(data),
-            .arena = Arena.init(alloc),
+            .alloc = alloc,
         };
-    }
-
-    /// Release all allocated memory
-    pub fn deinit(self: *Parser) void {
-        self.arena.deinit();
     }
 
     // TODO: Properly Handle Errors/When to return null
-    /// Parse `Message` from string of bytes `data`
-    pub fn read(self: *Parser) !?Message {
-        const alloc = self.arena.allocator();
 
-        var message: Message = std.mem.zeroInit(Message, .{});
+    /// Parse `Message` from string of bytes `data`
+    /// Resulting Message needs to be deinitialized
+    pub fn read(self: *Parser) !Message {
+        var message = Message.init(self.alloc);
 
         // Parse the packet header
-        message.header = self.readHeader() catch {
-            return null;
-        };
+        message.header = try self.readHeader();
 
         if (message.header.qcount > 0) {
-            var qs = std.ArrayList(Question).init(alloc);
-
             for (0..@as(usize, message.header.qcount)) |i| {
                 _ = i;
-                const q = self.readQuestion() catch {
-                    return null;
-                };
-                try qs.append(q);
+                const question = try message.addQuestion();
+                try self.readQuestion(question);
             }
-            message.questions = try qs.toOwnedSlice();
         }
         if (message.header.ancount > 0) {
-            // This packet contains an answer
-            var rrs = std.ArrayList(Record).init(alloc);
-
             for (0..@as(usize, message.header.ancount)) |i| {
                 _ = i;
-                const a = self.readRecord() catch {
-                    return null;
-                };
-                try rrs.append(a);
+                const ans = try message.addAnswer();
+                try self.readRecord(ans);
             }
-            message.answers = try rrs.toOwnedSlice();
         }
         if (message.header.nscount > 0) {
-            var nss = std.ArrayList(Record).init(alloc);
             for (0..@as(usize, message.header.nscount)) |i| {
                 _ = i;
-                const a = self.readRecord() catch {
-                    return null;
-                };
-                try nss.append(a);
+                const ns = try message.addAuthority();
+                try self.readRecord(ns);
             }
-            message.authorities = try nss.toOwnedSlice();
         }
         if (message.header.arcount > 0) {
-            var ars = std.ArrayList(Record).init(alloc);
             for (0..@as(usize, message.header.arcount)) |i| {
                 _ = i;
-                const a = self.readRecord() catch {
-                    return null;
-                };
-                try ars.append(a);
+                const ar = try message.addAdditional();
+                try self.readRecord(ar);
             }
-            message.additionals = try ars.toOwnedSlice();
         }
 
         return message;
     }
 
-    pub fn readQuestion(self: *Parser) !Question {
-        return .{
-            .qname = try self.handleName(),
-            .qtype = @enumFromInt(try self.reader.read(u16)),
-            .qclass = @enumFromInt(try self.reader.read(u16)),
-        };
+    pub fn readQuestion(self: *Parser, question: *Question) !void {
+        try self.handleName(&question.qname);
+        question.*.qtype = @enumFromInt(try self.reader.read(u16));
+        question.*.qclass = @enumFromInt(try self.reader.read(u16));
     }
 
-    pub fn readRecord(self: *Parser) !Record {
-        const alloc = self.arena.allocator();
-        const name = try self.handleName();
+    pub fn readRecord(self: *Parser, record: *Record) !void {
+        //const alloc = self.alloc;
+        try self.handleName(&record.name);
 
-        const typ: Record.Type = @enumFromInt(try self.reader.read(u16));
-        const class: Record.Class = @enumFromInt(try self.reader.read(u16));
-        const ttl: u32 = try self.reader.read(u32);
-        const rdlength: u16 = try self.reader.read(u16);
-        const rdata = try alloc.alloc(u8, @as(usize, rdlength));
+        record.*.type = @enumFromInt(try self.reader.read(u16));
+        record.*.class = @enumFromInt(try self.reader.read(u16));
+        record.*.ttl = try self.reader.read(u32);
+        record.*.rdlength = try self.reader.read(u16);
+        //const slice = try record.*.rdata.addManyAsSlice(@as(usize, record.*.rdlength));
 
-        try readList(rdata, &self.reader, @as(usize, rdlength));
-
-        // Unfortunatly we have to do it this way so we can properly read rdata(need rdlength)
-        return .{
-            .name = name,
-            .type = typ,
-            .class = class,
-            .ttl = ttl,
-            .rdlength = rdlength,
-            .rdata = rdata,
-        };
+        try readList(&record.rdata, &self.reader, @as(usize, record.rdlength));
     }
 
     pub fn readHeader(self: *Parser) !Header {
@@ -420,40 +656,41 @@ pub const Parser = struct {
 
     /// Reads name/qname field from packet, returns list of strings
     /// *Internal use only
-    inline fn handleName(self: *Parser) ![][]u8 {
-        const alloc = self.arena.allocator();
-        var list = std.ArrayList([]u8).init(alloc);
+    inline fn handleName(self: *Parser, list: *ArrayList(ArrayList(u8))) !void {
+        //var list = std.ArrayList([]u8).init(self.alloc);
+        //errdefer list.deinit();
 
         const pointer: u16 = try self.reader.read(u16);
         if ((pointer & 0xF) == 0xc) {
             const offset = @as(usize, pointer & 0xFFF);
             var tmp_rd = Reader.init(self.reader.bytes[offset..]);
-            try self.read2DList(&tmp_rd, &list);
+            try self.read2DList(&tmp_rd, list);
         } else {
             self.reader.index -= 2;
-            try self.read2DList(&self.reader, &list);
+            try self.read2DList(&self.reader, list);
         }
 
-        return list.toOwnedSlice();
+        //return list.toOwnedSlice();
     }
 
     /// Reads a list of u8 values from the reader into the buffer
     /// *Internal use only
-    inline fn readList(buf: []u8, reader: *Reader, size: usize) !void {
+    inline fn readList(buf: *ArrayList(u8), reader: *Reader, size: usize) !void {
         for (0..size) |i| {
-            buf[i] = try reader.read(u8);
+            _ = i;
+            try buf.append(try reader.read(u8));
         }
     }
 
     /// Reads name fields of packet
     /// *Internal use only
-    inline fn read2DList(self: *Parser, reader: *Reader, list: *std.ArrayList([]u8)) !void {
-        const alloc = self.arena.allocator();
+    inline fn read2DList(self: *Parser, reader: *Reader, list: *ArrayList(ArrayList(u8))) !void {
         var size: u8 = try reader.read(u8);
         var i: usize = 0;
         while (size != 0x00) : (i += 1) {
-            try list.append(try alloc.alloc(u8, @as(usize, size)));
-            try readList(list.items[i], reader, @as(usize, size));
+            const buf = try list.addOne();
+            buf.* = ArrayList(u8).init(self.alloc);
+            try readList(buf, reader, @as(usize, size));
             size = try reader.read(u8);
         }
     }
@@ -481,24 +718,33 @@ test "read" {
     const allocator = std.testing.allocator;
     const data = [_]u8{ 0xdb, 0x42, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x03, 0x77, 0x77, 0x77, 0x0c, 0x6e, 0x6f, 0x72, 0x74, 0x68, 0x65, 0x61, 0x73, 0x74, 0x65, 0x72, 0x6e, 0x03, 0x65, 0x64, 0x75, 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x58, 0x00, 0x04, 0x9b, 0x21, 0x11, 0x44 };
 
-    var dns = Parser.init(&data, allocator);
-    defer dns.deinit();
-
-    const packet = try dns.read() orelse undefined;
+    var packet = try Message.fromBytes(allocator, &data);
+    defer packet.deinit();
 
     var buf: [32]u8 = undefined;
 
     const addr = try std.fmt.bufPrint(&buf, "{}.{}.{}.{}", .{
-        packet.answers[0].rdata[0],
-        packet.answers[0].rdata[1],
-        packet.answers[0].rdata[2],
-        packet.answers[0].rdata[3],
+        packet.answers.items[0].rdata.items[0],
+        packet.answers.items[0].rdata.items[1],
+        packet.answers.items[0].rdata.items[2],
+        packet.answers.items[0].rdata.items[3],
     });
 
-    const bytes = try packet.bytes(allocator);
+    var buf2: [512]u8 = undefined;
+
+    const bytes = try packet.bytesAlloc(allocator);
+    const bytes2 = try packet.bytes(&buf2);
+
+    std.debug.print("{x}\nlen: {d}\n{x}\nlen: {d}\n", .{ bytes, bytes.len, bytes2, bytes2.len });
+
+    assert(std.mem.eql(u8, bytes, bytes2));
+
     defer allocator.free(bytes);
 
-    std.debug.print("{s}\nAddr: {s}\n", .{ packet.answers[0].name, addr });
+    const name = try packet.answers.items[0].nameToStringAlloc(allocator);
+    defer allocator.free(name);
+
+    std.debug.print("{s}\nAddr: {s}\n", .{ name, addr });
     std.debug.print("Bytes: {x}\n", .{bytes});
     std.debug.print("Original: {x}\n", .{data});
 }

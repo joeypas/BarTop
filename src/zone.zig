@@ -40,11 +40,11 @@ pub fn getClass(class: []const u8) Record.Class {
 
 pub const Zone = struct {
     file: fs.File,
-    arena: Arena,
+    allocator: Allocator,
     records: ArrayList(Record),
     context: Context,
     state: State,
-    last: [][]const u8,
+    last: ArrayList(ArrayList(u8)),
 
     pub fn init(allocator: Allocator, file_name: []const u8) !Zone {
         return .{
@@ -52,23 +52,34 @@ pub const Zone = struct {
             .records = ArrayList(Record).init(allocator),
             .context = undefined,
             .state = .ttl,
-            .last = undefined,
-            .arena = Arena.init(allocator),
+            .last = ArrayList(ArrayList(u8)).init(allocator),
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Zone) void {
         self.file.close();
+        for (self.context.origin) |item| {
+            self.allocator.free(item);
+        }
+        self.allocator.free(self.context.origin);
+        for (self.records.items) |*item| {
+            item.deinit();
+        }
+        for (self.last.items) |*item| {
+            item.deinit();
+        }
+        self.last.deinit();
         self.records.deinit();
-        self.arena.allocator().free(self.context.origin);
-        self.arena.deinit();
     }
 
     pub fn read(self: *Zone) !void {
         var reader = self.file.reader();
-        const allocator = self.arena.allocator();
 
-        var line_maybe = try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 512);
+        var line_arena = Arena.init(self.allocator);
+        defer line_arena.deinit();
+
+        var line_maybe: ?[]u8 = try reader.readUntilDelimiterOrEofAlloc(line_arena.allocator(), '\n', 512);
 
         while (line_maybe) |line| {
             const trimmed = mem.trim(u8, line, " \t\n\r");
@@ -76,14 +87,16 @@ pub const Zone = struct {
                 var tokens = mem.splitAny(u8, trimmed, " \t");
                 const first = tokens.next() orelse undefined;
                 if (std.mem.eql(u8, first, "$ORIGIN")) {
-                    var names = ArrayList([]const u8).init(allocator);
+                    var names = ArrayList([]u8).init(self.allocator);
+                    defer names.deinit();
                     var name_split = std.mem.splitAny(
                         u8,
                         tokens.next() orelse undefined,
                         ".",
                     );
                     while (name_split.next()) |n| {
-                        try names.append(n);
+                        try names.append(try self.allocator.alloc(u8, n.len));
+                        std.mem.copyForwards(u8, names.getLast(), n);
                     }
                     self.context.origin = try names.toOwnedSlice();
                 } else if (std.mem.eql(u8, first, "$TTL")) {
@@ -94,43 +107,49 @@ pub const Zone = struct {
                     );
                 }
             } else {
-                try self.records.append(try self.handleLine(line));
+                const record = try self.records.addOne();
+                record.allocator = self.allocator;
+                record.name = ArrayList(ArrayList(u8)).init(self.allocator);
+                record.rdata = ArrayList(u8).init(self.allocator);
+                try self.handleLine(line, record);
             }
-
-            line_maybe = try reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 512);
+            //_ = line_arena.reset(.free_all);
+            line_maybe = try reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 512);
         }
 
         if (line_maybe) |line| {
-            allocator.free(line);
+            self.allocator.free(line);
         }
     }
 
-    fn handleLine(self: *Zone, line: []u8) !Record {
+    fn cloneLast(self: *Zone, other: ArrayList(ArrayList(u8))) !void {
+        for (other.items) |item| {
+            try self.last.append(try item.clone());
+        }
+    }
+
+    fn handleLine(self: *Zone, line: []u8, record: *Record) !void {
         self.state = .ttl;
-        const allocator = self.arena.allocator();
         var index: usize = 0;
-        var ret: Record = undefined;
         var found_ttl = false;
         var found_class = false;
 
         if (std.ascii.isWhitespace(line[0])) {
-            ret.name = self.last;
+            try record.nameCloneOther(self.last);
         } else {
             var tokens = std.mem.tokenize(u8, line, " \t");
             var name_split = std.mem.splitAny(u8, tokens.next().?, ".");
-            var names = ArrayList([]const u8).init(allocator);
             if (name_split.peek()) |first| {
                 if (std.mem.eql(u8, first, "@")) {
-                    try names.appendSlice(self.context.origin);
+                    try record.*.nameAppendSlice2D(self.context.origin);
                 } else {
                     while (name_split.next()) |n| {
-                        try names.append(n);
+                        try record.nameAppendSlice(n);
                     }
                 }
             }
             index += tokens.index;
-            ret.name = try names.toOwnedSlice();
-            self.last = ret.name;
+            try self.cloneLast(record.name);
         }
 
         const trimmed = mem.trim(u8, line[index..], " ");
@@ -151,11 +170,11 @@ pub const Zone = struct {
                             break :blk;
                         }
                         found_ttl = true;
-                        ret.ttl = try std.fmt.parseInt(u32, token, 10);
+                        record.*.ttl = try std.fmt.parseInt(u32, token, 10);
                         _ = tokens.next();
                         if (found_class) {
                             self.state = .type;
-                            ret.class = self.context.class;
+                            record.*.class = self.context.class;
                             break :blk;
                         }
                         self.state = .class;
@@ -164,28 +183,29 @@ pub const Zone = struct {
                     .class => {
                         const c = getClass(token);
                         self.context.class = c;
-                        ret.class = c;
+                        record.*.class = c;
                         found_class = true;
                         if (found_ttl) {
                             _ = tokens.next();
                             self.state = .type;
                             break :blk;
                         }
-                        ret.ttl = self.context.default_ttl;
+                        record.*.ttl = self.context.default_ttl;
                         self.state = .ttl;
                         break :blk;
                     },
                     .type => {
-                        ret.type = getType(token);
+                        record.*.type = getType(token);
                         self.state = .rdata;
                         _ = tokens.next();
                         break :blk;
                     },
                     .rdata => {
-                        var rdata = ArrayList(u8).init(allocator);
+                        var rdata = ArrayList(u8).init(self.allocator);
+                        defer rdata.deinit();
                         std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
                         try rdata.appendSlice(trimmed[tokens.index..]);
-                        ret.rdata = try rdata.toOwnedSlice();
+                        try record.rdataCloneOther(rdata);
                         _ = tokens.next();
                         self.state = .done;
                     },
@@ -193,7 +213,6 @@ pub const Zone = struct {
                 }
             }
         }
-        return ret;
     }
 
     pub fn getRecords(self: *Zone, t: Record.Type, c: Record.Class, allocator: Allocator) ![]Record {
@@ -217,10 +236,12 @@ test "read" {
 
     std.debug.print("Size: {d}\n", .{zone.records.items.len});
 
-    for (zone.records.items) |record| {
+    for (zone.records.items) |*record| {
+        const name = try record.nameToStringAlloc(allocator);
+        defer allocator.free(name);
         std.debug.print(
-            "Record: ( {s}, {d}, {any}, {any}, {s} )\n",
-            .{ record.name, record.ttl, record.class, record.type, record.rdata },
+            "Record: ( {s}, {d}, {any}, {any}, {any} )\n",
+            .{ name, record.ttl, record.class, record.type, record.rdata.items },
         );
     }
 }

@@ -12,13 +12,16 @@ const LRU = @import("util/lru.zig").LRU;
 pub const Server = @This();
 const BUFFER_SIZE = 1024;
 var dns_mutex = Mutex{};
+var condition = Thread.Condition{};
+var running: bool = false;
+
 const Options = struct {
     external_server: ?[]const u8 = null,
     bind_addr: []const u8 = "127.0.0.1",
     bind_port: u16 = 53,
 };
 
-arena: std.heap.ArenaAllocator,
+//arena: std.heap.ArenaAllocator,
 allocator: Allocator,
 dns_cache: LRU([]const u8),
 dns_store: AutoHashMap(u64, []const u8),
@@ -42,12 +45,18 @@ fn getResolv(allocator: Allocator, external_server: ?[]const u8) ![]const u8 {
     );
     defer allocator.free(resolv_contents);
 
-    const start_index = std.mem.indexOf(u8, resolv_contents, "nameserver").? + 11;
-    const end_index = std.mem.indexOf(u8, resolv_contents[start_index..], "\n").? + start_index;
+    if (std.mem.indexOf(u8, resolv_contents, "nameserver")) |i| {
+        const start_index = i + 11;
+        const end_index = std.mem.indexOf(u8, resolv_contents[start_index..], "\n").? + start_index;
 
-    const ret = try allocator.alloc(u8, end_index - start_index);
-    std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
-    return ret;
+        const ret = try allocator.alloc(u8, end_index - start_index);
+        std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
+        return ret;
+    } else {
+        const ret = try allocator.alloc(u8, 7);
+        std.mem.copyForwards(u8, ret, "8.8.8.8");
+        return ret;
+    }
 }
 
 pub fn init(allocator: Allocator, options: Options) !Server {
@@ -56,7 +65,7 @@ pub fn init(allocator: Allocator, options: Options) !Server {
         .dns_store = AutoHashMap(u64, []const u8).init(allocator),
         .resolv = try getResolv(allocator, options.external_server),
         .allocator = allocator,
-        .arena = std.heap.ArenaAllocator.init(allocator),
+        //.arena = std.heap.ArenaAllocator.init(allocator),
         .pool = undefined,
         .sock = try posix.socket(
             posix.AF.INET,
@@ -68,22 +77,25 @@ pub fn init(allocator: Allocator, options: Options) !Server {
 }
 
 pub fn deinit(self: *Server) void {
-    self.pool.deinit();
     self.allocator.free(self.resolv);
     posix.close(self.sock);
+    var itr = self.dns_cache.map.iterator();
+    while (itr.next()) |item| {
+        self.allocator.free(item.value_ptr.*.value);
+    }
     self.dns_cache.deinit();
     self.dns_store.deinit();
-    self.arena.deinit();
+}
+
+pub fn handle(self: *Server) void {
+    self.run() catch |err| {
+        std.debug.print("Error in server run: {}\n", .{err});
+    };
 }
 
 pub fn run(self: *Server) !void {
     // TODO: Change this line with local dns info
-    var example = std.ArrayList([]const u8).init(self.allocator);
-    defer example.deinit();
-    try example.append("example");
-    try example.append("com");
-    const put = try example.toOwnedSlice();
-    defer self.allocator.free(put);
+    const put = "example.com.";
     try self.dns_store.put(hashFn(put), &[4]u8{ 192, 168, 1, 1 });
 
     const addr = try net.Address.parseIp(self.options.bind_addr, self.options.bind_port);
@@ -93,16 +105,16 @@ pub fn run(self: *Server) !void {
     std.debug.print("Listen on {any}\n", .{addr});
 
     var thread_safe = std.heap.ThreadSafeAllocator{
-        .child_allocator = self.arena.allocator(),
+        .child_allocator = self.allocator,
     };
     const alloc = thread_safe.allocator();
 
-    try Thread.Pool.init(&self.pool, .{ .allocator = alloc, .n_jobs = 8 });
+    try Thread.Pool.init(&self.pool, .{ .allocator = alloc, .n_jobs = 4 });
 
     var buffer: [BUFFER_SIZE]u8 = undefined;
 
-    var count: usize = 0;
-    while (count < 5) : (count += 1) {
+    //var count: usize = 0;
+    while (running) {
         var from_addr: posix.sockaddr = undefined;
         var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
         const recv_len = try posix.recvfrom(
@@ -112,13 +124,14 @@ pub fn run(self: *Server) !void {
             &from_addr,
             &from_addrlen,
         );
+        //if (!running) break;
         std.debug.print("Received {d} bytes from {any};\n", .{ recv_len, net.Address.initPosix(@alignCast(&from_addr)) });
         const client = Client{
             .socket = self.sock,
             .address = net.Address.initPosix(@alignCast(&from_addr)),
-            .buffer = &buffer,
+            .buffer = try self.pool.allocator.alloc(u8, buffer.len),
             .recv_len = recv_len,
-            .allocator = self.pool.allocator,
+            .allocator = &thread_safe,
             .store_ptr = &self.dns_store,
             .cache_ptr = &self.dns_cache,
             .resolv = self.resolv[0..],
@@ -128,18 +141,21 @@ pub fn run(self: *Server) !void {
         // Spawn thread to handle DNS query
         try self.pool.spawn(Client.handle, .{client});
     }
+
+    dns_mutex.lock();
+    defer dns_mutex.unlock();
+    condition.wait(&dns_mutex);
+    self.pool.deinit();
 }
 
-fn hashFn(data: [][]const u8) u64 {
+fn hashFn(data: []const u8) u64 {
     const p: u64 = 31;
     const m: u64 = 1e9 + 9;
     var hash: u64 = 0;
     var p_pow: u64 = 1;
-    for (data) |list| {
-        for (list) |byte| {
-            hash = (hash + (byte - 97 + 1) * p_pow) % m;
-            p_pow = (p_pow * p) % m;
-        }
+    for (data) |byte| {
+        hash = (hash + byte * p_pow) % m;
+        p_pow = (p_pow * p) % m;
     }
     return hash;
 }
@@ -149,7 +165,7 @@ const Client = struct {
     address: std.net.Address,
     buffer: []u8,
     recv_len: usize,
-    allocator: Allocator,
+    allocator: *std.heap.ThreadSafeAllocator,
     store_ptr: *AutoHashMap(u64, []const u8),
     cache_ptr: *LRU([]const u8),
     resolv: []const u8,
@@ -162,9 +178,10 @@ const Client = struct {
                 "[{any}] client handle error: {}\n",
                 .{ self.address, err },
             ) catch {};
-            const message = createDnsError(.format_error);
-            const bytes = message.bytes(self.allocator) catch "";
-            defer self.allocator.free(bytes);
+            var message = createDnsError(self.allocator.allocator(), .format_error);
+            defer message.deinit();
+            const bytes = message.bytesAlloc(self.allocator.allocator()) catch "  ";
+            defer self.allocator.allocator().free(bytes);
             _ = posix.sendto(
                 self.socket,
                 bytes,
@@ -178,9 +195,11 @@ const Client = struct {
                 ) catch {};
             };
         };
+        self.allocator.allocator().free(self.buffer);
     }
 
     fn handleDnsQuery(self: Client) !void {
+        const alloc = self.allocator.allocator();
         const query = self.buffer[0..self.recv_len];
         var response = self.buffer[self.recv_len..];
 
@@ -191,55 +210,64 @@ const Client = struct {
 
         var len: usize = 0;
 
-        var parser = dns.Parser.init(query, self.allocator);
-        defer parser.deinit();
+        var packet = try dns.Message.fromBytes(alloc, query);
+        defer packet.deinit();
 
-        if (try parser.read()) |packet| {
-            //std.debug.print("{s}: {any}: {any}\n", .{ packet.questions[0].qname, packet.header.flags, packet.questions[0] });
-            dns_mutex.lock();
-            defer dns_mutex.unlock();
-            //std.debug.print("Received DNS Packet: {any}\n", .{packet});
-            const question = packet.questions[0];
+        var response_packet = dns.Message.init(alloc);
+        defer response_packet.deinit();
+        createDnsResponse(&response_packet, packet);
+        //std.debug.print("Received DNS Packet: {any}\n", .{packet});
 
-            const qname_hash = hashFn(question.qname);
+        defer condition.signal();
+        dns_mutex.lock();
+        defer dns_mutex.unlock();
+
+        for (packet.questions.items) |*question| {
+            const qname = try question.*.qnameToStringAlloc(alloc);
+            defer alloc.free(qname);
+            std.debug.print("Qname: {s}\n", .{qname});
+            const qname_hash = hashFn(qname);
 
             if (self.cache_ptr.get(qname_hash)) |cached_response| {
+                // TODO: this only works if there is one question
+
                 // Return cached response
-                std.debug.print("Cache hit for {s}\n", .{question.qname});
+                std.debug.print("Cache hit for {s}\n", .{qname});
                 std.mem.copyForwards(u8, response, cached_response);
 
                 // Make sure id matches question
                 std.mem.copyForwards(u8, response[0..2], &dns.u16ToBeBytes(packet.header.id));
                 //std.debug.print("Got: {x}\n", .{cached_response});
                 len = cached_response.len;
+                break;
             } else if (self.store_ptr.get(qname_hash)) |address| {
                 // Return local response
-                //std.debug.print("Found in local store: {s} -> {any}\n", .{ question.qname, address });
+                std.debug.print("Found in local store: {s} -> {any}\n", .{ qname, address });
 
-                var response_packet = createDnsResponse(packet, question.qname, address);
-                const response_bytes = try response_packet.bytes(self.allocator);
-                defer self.allocator.free(response_bytes);
+                try updateDnsResponse(&response_packet, question.*, address[0..]);
 
-                std.mem.copyForwards(u8, response, response_bytes);
+                const response_bytes = try response_packet.bytes(response);
+                //defer alloc.free(response_bytes);
+
+                //std.mem.copyForwards(u8, response, response_bytes);
                 len = response_bytes.len;
             } else {
+                // TODO: This only works if theres one question
+
                 // Query external server
-                //std.debug.print("Not found in local store, querying external server...\n", .{});
+                std.debug.print("Not found in local store, querying external server...\n", .{});
 
                 const external_len = try self.queryExternalServer(query, response);
-                const res = try self.allocator.alloc(u8, external_len);
-                //std.debug.print("Put: {x}\n", .{response[0..external_len]});
+                const res = try self.cache_ptr.allocator.alloc(u8, external_len);
                 std.mem.copyForwards(u8, res, response[0..external_len]);
                 try self.cache_ptr.put(qname_hash, res);
                 len = external_len;
+                break;
             }
-        } else {
-            return error.InvalidDNSQuery;
         }
 
         //std.debug.print("Sending: {x}\n", .{response[0..len]});
 
-        dns_mutex.lock();
         _ = try posix.sendto(
             self.socket,
             response[0..len],
@@ -247,7 +275,6 @@ const Client = struct {
             &self.address.any,
             self.address.getOsSockLen(),
         );
-        dns_mutex.unlock();
     }
 
     inline fn queryExternalServer(self: Client, query: []const u8, response: []u8) !usize {
@@ -280,72 +307,83 @@ const Client = struct {
     }
 };
 
-inline fn createDnsResponse(packet: dns.Message, qname: [][]const u8, address: []const u8) dns.Message {
-    return dns.Message{
-        .header = dns.Header{
-            .id = packet.header.id,
-            .flags = dns.Header.Flags{
-                .qr = true,
-                .opcode = dns.Header.Opcode.query,
-                .aa = false,
-                .tc = false,
-                .rd = packet.header.flags.rd,
-                .ra = true,
-                .rcode = dns.Header.ResponseCode.no_error,
-            },
-            .qcount = packet.header.qcount,
-            .ancount = 1,
-            .nscount = 0,
-            .arcount = 0,
+inline fn createDnsResponse(message: *dns.Message, packet: dns.Message) void {
+    message.header = dns.Header{
+        .id = packet.header.id,
+        .flags = dns.Header.Flags{
+            .qr = true,
+            .opcode = dns.Header.Opcode.query,
+            .aa = false,
+            .tc = false,
+            .rd = packet.header.flags.rd,
+            .ra = true,
+            .rcode = dns.Header.ResponseCode.no_error,
         },
-        .questions = packet.questions,
-        .answers = &[_]dns.Record{
-            dns.Record{
-                .name = qname,
-                .type = dns.Record.Type.a,
-                .class = dns.Record.Class.in,
-                .ttl = 300,
-                .rdlength = @as(u16, @intCast(address.len)),
-                .rdata = address,
-            },
-        },
-        .authorities = &[_]dns.Record{},
-        .additionals = &[_]dns.Record{},
+        .qcount = packet.header.qcount,
+        .ancount = 1,
+        .nscount = 0,
+        .arcount = 0,
     };
 }
 
-inline fn createDnsError(err: dns.Header.ResponseCode) dns.Message {
-    return dns.Message{
-        .header = dns.Header{
-            .id = 0,
-            .flags = dns.Header.Flags{
-                .qr = true,
-                .opcode = dns.Header.Opcode.query,
-                .aa = false,
-                .tc = false,
-                .rd = false,
-                .ra = true,
-                .rcode = err,
-            },
-            .qcount = 0,
-            .ancount = 0,
-            .nscount = 0,
-            .arcount = 0,
+inline fn updateDnsResponse(message: *dns.Message, question: dns.Question, address: []const u8) !void {
+    //message.questions = std.ArrayList(dns.Question).fromOwnedSlice(packet.allocator, try packet.questions.toOwnedSlice());
+    var q = try message.addQuestion();
+    q.qtype = question.qtype;
+    q.qclass = question.qclass;
+    try q.qnameCloneOther(question.qname);
+    var ans = try message.addAnswer();
+    try ans.nameCloneOther(question.qname);
+    try ans.rdataAppendSlice(address);
+    ans.type = dns.Record.Type.a;
+    ans.class = dns.Record.Class.in;
+    ans.ttl = 300;
+    ans.rdlength = @as(u16, @intCast(address.len));
+}
+
+inline fn createDnsError(allocator: Allocator, err: dns.Header.ResponseCode) dns.Message {
+    var message = dns.Message.init(allocator);
+    message.header = dns.Header{
+        .id = 0,
+        .flags = dns.Header.Flags{
+            .qr = true,
+            .opcode = dns.Header.Opcode.query,
+            .aa = false,
+            .tc = false,
+            .rd = false,
+            .ra = true,
+            .rcode = err,
         },
-        .questions = &[_]dns.Question{},
-        .answers = &[_]dns.Record{},
-        .authorities = &[_]dns.Record{},
-        .additionals = &[_]dns.Record{},
+        .qcount = 0,
+        .ancount = 0,
+        .nscount = 0,
+        .arcount = 0,
     };
+    return message;
 }
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    const stdin = std.io.getStdIn().reader();
 
     var server = try Server.init(allocator, .{ .bind_port = 5553 });
     defer server.deinit();
 
-    try server.run();
+    running = true;
+
+    var main_thread = try Thread.spawn(.{}, Server.handle, .{&server});
+
+    while (running) {
+        const in = try stdin.readUntilDelimiterAlloc(allocator, '\n', 100);
+        defer allocator.free(in);
+        if (std.mem.eql(u8, in, "q")) {
+            dns_mutex.lock();
+            defer dns_mutex.unlock();
+            running = false;
+        }
+    }
+
+    main_thread.join();
 }
