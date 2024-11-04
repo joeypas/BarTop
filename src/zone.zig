@@ -113,13 +113,13 @@ pub const Zone = struct {
                 record.rdata = ArrayList(u8).init(self.allocator);
                 try self.handleLine(line, record);
             }
-            _ = line_arena.reset(.free_all);
+            //_ = line_arena.reset(.free_all);
             line_maybe = try reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 512);
         }
 
-        //if (line_maybe) |line| {
-        //    self.allocator.free(line);
-        //}
+        if (line_maybe) |line| {
+            self.allocator.free(line);
+        }
     }
 
     fn cloneLast(self: *Zone, other: ArrayList(ArrayList(u8))) !void {
@@ -205,7 +205,7 @@ pub const Zone = struct {
                         defer rdata.deinit();
                         std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
                         try rdata.appendSlice(trimmed[tokens.index..]);
-                        try record.rdataAppendSlice(rdata.items);
+                        try record.rdataCloneOther(rdata);
                         _ = tokens.next();
                         self.state = .done;
                     },
@@ -237,7 +237,7 @@ test "read" {
     std.debug.print("Size: {d}\n", .{zone.records.items.len});
 
     for (zone.records.items) |*record| {
-        const name = try record.nameToString();
+        const name = try record.nameToStringAlloc(allocator);
         defer allocator.free(name);
         std.debug.print(
             "Record: ( {s}, {d}, {any}, {any}, {any} )\n",

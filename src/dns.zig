@@ -7,6 +7,8 @@ const Reader = @import("reader.zig");
 const bigToNative = std.mem.bigToNative;
 const nativeToBig = std.mem.nativeToBig;
 
+pub const Name = ArrayList(ArrayList(u8));
+
 pub const Message = struct {
     header: Header,
     questions: ArrayList(Question),
@@ -99,22 +101,22 @@ pub const Message = struct {
         size += header_bytes.len;
 
         for (self.questions.items) |*item| {
-            const item_bytes = try item.bytes(buf[size..]);
+            const item_bytes = try item.*.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
         for (self.answers.items) |*item| {
-            const item_bytes = try item.bytes(buf[size..]);
+            const item_bytes = try item.*.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
         for (self.authorities.items) |*item| {
-            const item_bytes = try item.bytes(buf[size..]);
+            const item_bytes = try item.*.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
         for (self.additionals.items) |*item| {
-            const item_bytes = try item.bytes(buf[size..]);
+            const item_bytes = try item.*.bytes(buf[size..]);
             size += item_bytes.len;
         }
 
@@ -393,8 +395,8 @@ pub const Question = struct {
         }
     }
 
-    pub fn qnameToString(self: *Question) ![]const u8 {
-        var tmp = ArrayList(u8).init(self.allocator);
+    pub fn qnameToStringAlloc(self: *Question, allocator: Allocator) ![]const u8 {
+        var tmp = ArrayList(u8).init(allocator);
         for (self.qname.items) |item| {
             try tmp.appendSlice(item.items);
             try tmp.append('.');
@@ -477,7 +479,7 @@ pub const Record = struct {
         try builder.appendSlice(&rdlength_be);
 
         // Append rdata
-        try builder.appendSlice(self.rdata.allocatedSlice());
+        try builder.appendSlice(self.rdata.items);
 
         return builder.toOwnedSlice();
     }
@@ -539,8 +541,13 @@ pub const Record = struct {
         //self.rdata.shrinkAndFree(slice.len);
     }
 
-    pub fn nameToString(self: *Record) ![]const u8 {
-        var tmp = ArrayList(u8).init(self.allocator);
+    pub fn rdataCloneOther(self: *Record, other: ArrayList(u8)) !void {
+        self.rdata.deinit();
+        self.rdata = try other.clone();
+    }
+
+    pub fn nameToStringAlloc(self: *Record, allocator: Allocator) ![]const u8 {
+        var tmp = ArrayList(u8).init(allocator);
         for (self.name.items) |item| {
             try tmp.appendSlice(item.items);
             try tmp.append('.');
@@ -728,11 +735,13 @@ test "read" {
     const bytes = try packet.bytesAlloc(allocator);
     const bytes2 = try packet.bytes(&buf2);
 
+    std.debug.print("{x}\nlen: {d}\n{x}\nlen: {d}\n", .{ bytes, bytes.len, bytes2, bytes2.len });
+
     assert(std.mem.eql(u8, bytes, bytes2));
 
     defer allocator.free(bytes);
 
-    const name = try packet.answers.items[0].nameToString();
+    const name = try packet.answers.items[0].nameToStringAlloc(allocator);
     defer allocator.free(name);
 
     std.debug.print("{s}\nAddr: {s}\n", .{ name, addr });

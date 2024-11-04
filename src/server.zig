@@ -12,6 +12,9 @@ const LRU = @import("util/lru.zig").LRU;
 pub const Server = @This();
 const BUFFER_SIZE = 1024;
 var dns_mutex = Mutex{};
+var condition = Thread.Condition{};
+var running: bool = false;
+
 const Options = struct {
     external_server: ?[]const u8 = null,
     bind_addr: []const u8 = "127.0.0.1",
@@ -84,6 +87,12 @@ pub fn deinit(self: *Server) void {
     self.dns_store.deinit();
 }
 
+pub fn handle(self: *Server) void {
+    self.run() catch |err| {
+        std.debug.print("Error in server run: {}\n", .{err});
+    };
+}
+
 pub fn run(self: *Server) !void {
     // TODO: Change this line with local dns info
     const put = "example.com.";
@@ -100,12 +109,12 @@ pub fn run(self: *Server) !void {
     };
     const alloc = thread_safe.allocator();
 
-    try Thread.Pool.init(&self.pool, .{ .allocator = alloc, .n_jobs = 8 });
+    try Thread.Pool.init(&self.pool, .{ .allocator = alloc, .n_jobs = 4 });
 
     var buffer: [BUFFER_SIZE]u8 = undefined;
 
-    var count: usize = 0;
-    while (count < 5) : (count += 1) {
+    //var count: usize = 0;
+    while (running) {
         var from_addr: posix.sockaddr = undefined;
         var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
         const recv_len = try posix.recvfrom(
@@ -115,6 +124,7 @@ pub fn run(self: *Server) !void {
             &from_addr,
             &from_addrlen,
         );
+        //if (!running) break;
         std.debug.print("Received {d} bytes from {any};\n", .{ recv_len, net.Address.initPosix(@alignCast(&from_addr)) });
         const client = Client{
             .socket = self.sock,
@@ -131,6 +141,10 @@ pub fn run(self: *Server) !void {
         // Spawn thread to handle DNS query
         try self.pool.spawn(Client.handle, .{client});
     }
+
+    dns_mutex.lock();
+    defer dns_mutex.unlock();
+    condition.wait(&dns_mutex);
     self.pool.deinit();
 }
 
@@ -204,14 +218,15 @@ const Client = struct {
         createDnsResponse(&response_packet, packet);
         //std.debug.print("Received DNS Packet: {any}\n", .{packet});
 
+        defer condition.signal();
+        dns_mutex.lock();
+        defer dns_mutex.unlock();
+
         for (packet.questions.items) |*question| {
-            const qname = try question.*.qnameToString();
+            const qname = try question.*.qnameToStringAlloc(alloc);
             defer alloc.free(qname);
             std.debug.print("Qname: {s}\n", .{qname});
             const qname_hash = hashFn(qname);
-
-            dns_mutex.lock();
-            defer dns_mutex.unlock();
 
             if (self.cache_ptr.get(qname_hash)) |cached_response| {
                 // TODO: this only works if there is one question
@@ -231,10 +246,10 @@ const Client = struct {
 
                 try updateDnsResponse(&response_packet, question.*, address[0..]);
 
-                const response_bytes = try response_packet.bytesAlloc(alloc);
-                defer alloc.free(response_bytes);
+                const response_bytes = try response_packet.bytes(response);
+                //defer alloc.free(response_bytes);
 
-                std.mem.copyForwards(u8, response, response_bytes);
+                //std.mem.copyForwards(u8, response, response_bytes);
                 len = response_bytes.len;
             } else {
                 // TODO: This only works if theres one question
@@ -351,9 +366,24 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    const stdin = std.io.getStdIn().reader();
 
     var server = try Server.init(allocator, .{ .bind_port = 5553 });
     defer server.deinit();
 
-    try server.run();
+    running = true;
+
+    var main_thread = try Thread.spawn(.{}, Server.handle, .{&server});
+
+    while (running) {
+        const in = try stdin.readUntilDelimiterAlloc(allocator, '\n', 100);
+        defer allocator.free(in);
+        if (std.mem.eql(u8, in, "q")) {
+            dns_mutex.lock();
+            defer dns_mutex.unlock();
+            running = false;
+        }
+    }
+
+    main_thread.join();
 }

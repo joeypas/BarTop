@@ -113,8 +113,10 @@ pub fn main() !void {
             .{std.meta.fieldNames(Dns.Header.ResponseCode)[@intFromEnum(message.header.flags.rcode)]},
         );
     } else {
-        const name = try message.answers.items[0].nameToString();
-        defer allocator.free(name);
-        std.debug.print("RECIEVED=> {s}: {any}", .{ name, message.answers.items[0].rdata.items });
+        for (message.answers.items) |*ans| {
+            const name = try ans.nameToStringAlloc(allocator);
+            defer allocator.free(name);
+            std.debug.print("RECIEVED=> {s}: {any}", .{ name, ans.rdata.items });
+        }
     }
 }
