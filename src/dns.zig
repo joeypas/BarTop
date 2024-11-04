@@ -8,13 +8,15 @@ const bigToNative = std.mem.bigToNative;
 const nativeToBig = std.mem.nativeToBig;
 
 pub const Name = ArrayList(ArrayList(u8));
+pub const QList = ArrayList(Question);
+pub const RList = ArrayList(Record);
 
 pub const Message = struct {
     header: Header,
-    questions: ArrayList(Question),
-    answers: ArrayList(Record),
-    authorities: ArrayList(Record),
-    additionals: ArrayList(Record),
+    questions: QList,
+    answers: RList,
+    authorities: RList,
+    additionals: RList,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) Message {
@@ -161,6 +163,21 @@ pub const Message = struct {
         additional.rdata = ArrayList(u8).init(self.allocator);
         return additional;
     }
+
+    pub fn copyFromOther(self: *Message, other: Message) !void {
+        for (other.questions.items) |*item| {
+            try self.questions.append(try item.clone());
+        }
+        for (other.answers.items) |*item| {
+            try self.answers.append(try item.clone());
+        }
+        for (other.authorities.items) |*item| {
+            try self.authorities.append(try item.clone());
+        }
+        for (other.additionals.items) |*item| {
+            try self.additionals.append(try item.clone());
+        }
+    }
 };
 
 pub const Header = packed struct(u96) {
@@ -280,7 +297,7 @@ pub const Header = packed struct(u96) {
 };
 
 pub const Question = struct {
-    qname: ArrayList(ArrayList(u8)),
+    qname: Name,
     qtype: QType,
     qclass: QClass,
     allocator: Allocator,
@@ -404,10 +421,21 @@ pub const Question = struct {
 
         return tmp.toOwnedSlice();
     }
+
+    pub fn clone(self: *Question) !Question {
+        var question = Question{
+            .qname = ArrayList(ArrayList(u8)).init(self.allocator),
+            .qtype = self.qtype,
+            .qclass = self.qclass,
+            .allocator = self.allocator,
+        };
+        try question.qnameCloneOther(self.qname);
+        return question;
+    }
 };
 
 pub const Record = struct {
-    name: ArrayList(ArrayList(u8)),
+    name: Name,
     type: Type,
     class: Class,
     ttl: u32,
@@ -554,6 +582,20 @@ pub const Record = struct {
         }
 
         return tmp.toOwnedSlice();
+    }
+
+    pub fn clone(self: *Record) !Record {
+        var record = Record{
+            .name = ArrayList(ArrayList(u8)).init(self.allocator),
+            .type = self.type,
+            .class = self.class,
+            .ttl = self.ttl,
+            .rdlength = self.rdlength,
+            .rdata = try self.rdata.clone(),
+            .allocator = self.allocator,
+        };
+        try record.nameCloneOther(self.name);
+        return record;
     }
 };
 

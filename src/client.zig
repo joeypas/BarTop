@@ -81,10 +81,9 @@ pub fn main() !void {
 
     //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
     //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
-    const data = try packet.bytesAlloc(allocator);
+    var data_buf: [512]u8 = undefined;
+    const data = try packet.bytes(&data_buf);
     std.debug.print("Data len: {d}\n", .{data.len});
-    defer allocator.free(data);
-    //_ = packet;
     const addr = try std.net.Address.parseIp("127.0.0.1", 5553);
     const sock = try std.posix.socket(
         std.posix.AF.INET,
@@ -116,7 +115,7 @@ pub fn main() !void {
         for (message.answers.items) |*ans| {
             const name = try ans.nameToStringAlloc(allocator);
             defer allocator.free(name);
-            std.debug.print("RECIEVED=> {s}: {any}", .{ name, ans.rdata.items });
+            std.debug.print("RECIEVED=> {s}: {any}\n", .{ name, ans.rdata.items });
         }
     }
 }
