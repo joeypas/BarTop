@@ -3,7 +3,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const AutoHashMap = std.AutoHashMap;
 
-pub fn CacheEntry(T: type) type {
+pub fn CacheEntry(comptime T: type) type {
     return struct {
         key: u64,
         value: T,
@@ -12,7 +12,7 @@ pub fn CacheEntry(T: type) type {
     };
 }
 
-pub fn LRU(T: type) type {
+pub fn LRU(comptime T: type) type {
     return struct {
         const Self = @This();
         capacity: usize,

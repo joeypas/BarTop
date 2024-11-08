@@ -14,7 +14,7 @@ pub fn init(bytes: []const u8) Reader {
 }
 
 pub fn read(self: *Reader, comptime T: type) !T {
-    return switch (@typeInfo(T)) {
+    return switch (comptime @typeInfo(T)) {
         .Int => try self.readInt(T),
         .Array => |array| {
             var arr: [array.len]array.child = undefined;

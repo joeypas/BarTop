@@ -407,8 +407,11 @@ pub const Question = struct {
     }
 
     pub fn qnameCloneOther(self: *Question, other: ArrayList(ArrayList(u8))) !void {
-        for (other.items) |item| {
-            try self.qname.append(try item.clone());
+        for (other.items) |*item| {
+            //try self.qname.append(try item.clone());
+            var tmp = try self.qname.addOne();
+            tmp.* = ArrayList(u8).init(self.allocator);
+            try tmp.appendSlice(item.items);
         }
     }
 
@@ -420,6 +423,19 @@ pub const Question = struct {
         }
 
         return tmp.toOwnedSlice();
+    }
+
+    pub fn qnameToString(self: *Question, buffer: []u8) ![]u8 {
+        var fbs = std.io.fixedBufferStream(buffer);
+        var size: usize = 0;
+        var writer = fbs.writer();
+
+        for (self.qname.items) |*item| {
+            size += try writer.write(item.items);
+            try writer.writeByte('.');
+            size += 1;
+        }
+        return buffer[0..size];
     }
 
     pub fn clone(self: *Question) !Question {
@@ -559,8 +575,10 @@ pub const Record = struct {
     }
 
     pub fn nameCloneOther(self: *Record, other: ArrayList(ArrayList(u8))) !void {
-        for (other.items) |item| {
-            try self.name.append(try item.clone());
+        for (other.items) |*item| {
+            var tmp = try self.name.addOne();
+            tmp.* = ArrayList(u8).init(self.allocator);
+            try tmp.appendSlice(item.items);
         }
     }
 
