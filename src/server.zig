@@ -69,7 +69,7 @@ pub fn init(allocator: Allocator, comptime options: Options) !Server {
         .pool = undefined,
         .sock = try posix.socket(
             posix.AF.INET,
-            posix.SOCK.DGRAM,
+            posix.SOCK.DGRAM | posix.SOCK.NONBLOCK,
             posix.IPPROTO.UDP,
         ),
         .options = options,
@@ -118,19 +118,22 @@ pub fn run(self: *Server) !void {
 
     //var count: usize = 0;
     while (running) {
-        var from_addr: posix.sockaddr = undefined;
+        var from_addr: net.Address = undefined;
         var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
-        const recv_len = try posix.recvfrom(
+        const recv_len = posix.recvfrom(
             self.sock,
             buffer[0..],
-            0,
-            &from_addr,
+            posix.SOCK.NONBLOCK,
+            &from_addr.any,
             &from_addrlen,
-        );
-        std.debug.print("Received {d} bytes from {any};\n", .{ recv_len, net.Address.initPosix(@alignCast(&from_addr)) });
+        ) catch |err| switch (err) {
+            error.WouldBlock => continue,
+            else => break,
+        };
+        std.debug.print("Received {d} bytes from {any};\n", .{ recv_len, from_addr });
         var client = Client{
             .socket = self.sock,
-            .address = net.Address.initPosix(@alignCast(&from_addr)),
+            .address = from_addr,
             .recv_len = recv_len,
             .allocator = &thread_safe,
             .store_ptr = &self.dns_store,
@@ -145,7 +148,7 @@ pub fn run(self: *Server) !void {
 
     dns_mutex.lock();
     defer dns_mutex.unlock();
-    condition.wait(&dns_mutex);
+    //condition.wait(&dns_mutex);
     self.pool.deinit();
 }
 
@@ -161,7 +164,7 @@ fn hashFn(data: []const u8) u64 {
     return hash;
 }
 
-const Client = struct {
+pub const Client = struct {
     socket: posix.fd_t,
     address: std.net.Address,
     buffer: [BUFFER_SIZE]u8 = undefined,
