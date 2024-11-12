@@ -11,44 +11,29 @@ pub const Loop = switch (@import("builtin").os.tag) {
     else => @panic("Platform not supported"),
 };
 
-const Event = union(enum) {
-    accept: void,
-    read: *Client,
-    write: *Client,
+pub const Event = switch (@import("builtin").os.tag) {
+    .macos, .ios, .tvos, .watchos, .freebsd, .netbsd, .dragonfly, .openbsd => system.Kevent,
+    .linux => linux.epoll_event,
+    else => @panic("Platform not supported"),
 };
+
+pub fn polling_condition(event: Event) bool {
+    switch (@import("builtin").os.tag) {
+        .macos, .ios, .tvos, .watchos, .freebsd, .netbsd, .dragonfly, .openbsd => {
+            return event.filter == system.EVFILT_READ;
+        },
+        .linux => {
+            return event.events & linux.EPOLL.IN == linux.EPOLL.IN;
+        },
+        else => @panic("Platform not supported"),
+    }
+}
 
 const KQueue = struct {
     kfd: posix.fd_t,
     event_list: [128]system.Kevent = undefined,
     change_list: [16]system.Kevent = undefined,
     change_count: usize = 0,
-
-    pub const Iterator = struct {
-        index: usize,
-        event_list: []system.Kevent,
-
-        pub fn next(self: *Iterator) ?Event {
-            const index = self.index;
-            const event_list = self.event_list;
-            if (index == event_list.len) {
-                return null;
-            }
-
-            self.index = index + 1;
-            const event = event_list[index];
-            switch (event.udata) {
-                0 => return .{ .accept = {} },
-                else => |nptr| {
-                    const filter = event.filter;
-                    const client: *Client = @ptrFromInt(nptr);
-                    if (filter == system.EVFILT_READ) {
-                        return .{ .read = client };
-                    }
-                    return .{ .write = client };
-                },
-            }
-        }
-    };
 
     pub fn init() !KQueue {
         return .{
@@ -60,8 +45,7 @@ const KQueue = struct {
         posix.close(self.kfd);
     }
 
-    pub fn wait(self: *KQueue, timeout_ms: i32) Iterator {
-        const event_list = &self.event_list;
+    pub fn wait(self: *KQueue, timeout_ms: i32) ![]system.Kevent {
         const timeout = posix.timespec{
             .tv_sec = @intCast(@divTrunc(timeout_ms, 1000)),
             .tv_nsec = @intCast(@mod(timeout_ms, 1000) * 1000000),
@@ -69,22 +53,19 @@ const KQueue = struct {
         const count = try posix.kevent(
             self.kfd,
             self.change_list[0..self.change_count],
-            event_list,
+            &self.event_list,
             &timeout,
         );
 
         self.change_count = 0;
-        return .{
-            .index = 0,
-            .event_list = event_list[0..count],
-        };
+        return self.event_list[0..count];
     }
 
     pub fn addListener(self: *KQueue, listener: posix.socket_t) !void {
         try self.queueChange(.{
             .ident = @intCast(listener),
             .filter = posix.system.EVFILT_READ,
-            .flags = posix.system.EV_ADD,
+            .flags = posix.system.EV_ADD | posix.system.EV_ENABLE,
             .fflags = 0,
             .data = 0,
             .udata = 0,
@@ -177,32 +158,6 @@ const Epoll = struct {
     efd: posix.fd_t,
     ready_list: [128]linux.epoll_event = undefined,
 
-    pub const Iterator = struct {
-        index: usize,
-        ready_list: []linux.epoll_event,
-
-        pub fn next(self: *Iterator) ?Event {
-            const index = self.index;
-            const ready_list = self.ready_list;
-            if (index == ready_list.len) {
-                return null;
-            }
-
-            self.index = index + 1;
-            const ready = ready_list[index];
-            switch (ready.data.ptr) {
-                0 => return .{ .accept = {} },
-                else => |nptr| {
-                    const client: *Client = @ptrFromInt(nptr);
-                    if (ready.events & linux.EPOLL.IN == linux.EPOLL.IN) {
-                        return .{ .read = client };
-                    }
-                    return .{ .write = client };
-                },
-            }
-        }
-    };
-
     pub fn init() !Epoll {
         return .{
             .efd = try posix.epoll_create1(0),
@@ -213,14 +168,11 @@ const Epoll = struct {
         posix.close(self.efd);
     }
 
-    pub fn wait(self: *Epoll, timeout: i32) Iterator {
+    pub fn wait(self: *Epoll, timeout: i32) []linux.epoll_event {
         const ready_list = &self.ready_list;
         const count = posix.epoll_wait(self.efd, ready_list, timeout);
 
-        return .{
-            .index = 0,
-            .ready_list = ready_list[0..count],
-        };
+        return self.ready_list[0..count];
     }
 
     pub fn addListener(self: *Epoll, listener: posix.socket_t) !void {
