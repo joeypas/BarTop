@@ -29,21 +29,21 @@ pub const Options = struct {
     external_server: ?[]const u8 = null,
     bind_addr: []const u8 = "127.0.0.1",
     bind_port: u16 = 53,
-    n_workers: u32 = 7,
+    n_workers: u32 = 6,
 };
 
 pub const Task = struct {
-    client_addr: net.Address,
+    client_addr: net.Address = undefined,
     buffer: [BUFFER_SIZE]u8 = undefined,
-    recv_len: usize,
+    recv_len: usize = undefined,
 };
 
 pub const Server = struct {
     allocator: Allocator,
     worker_allocator: std.heap.ThreadSafeAllocator,
     dns_cache: LRU(dns.Message),
-    dns_store: AutoHashMap(u64, []const u8),
-    task_queue: TaskQueue,
+    dns_store: AutoHashMap(u64, []u8),
+    task_queue: ?TaskQueue = null,
     resolv: []const u8,
     sock: posix.socket_t,
     options: Options = Options{},
@@ -59,8 +59,8 @@ pub const Server = struct {
         try posix.setsockopt(sock, posix.SOL.SOCKET, posix.SO.REUSEPORT, &std.mem.toBytes(@as(c_int, 1)));
         return .{
             .dns_cache = LRU(dns.Message).init(allocator, 100),
-            .dns_store = AutoHashMap(u64, []const u8).init(allocator),
-            .task_queue = TaskQueue.init(allocator),
+            .dns_store = AutoHashMap(u64, []u8).init(allocator),
+            //.task_queue = TaskQueue.init(allocator),
             .resolv = try getResolv(allocator, options.external_server),
             .allocator = allocator,
             .worker_allocator = std.heap.ThreadSafeAllocator{
@@ -84,16 +84,75 @@ pub const Server = struct {
         self.dns_store.deinit();
     }
 
-    pub fn handle(self: *Server) void {
-        self.run() catch |err| {
-            std.debug.print("Error in server run: {}\n", .{err});
-        };
+    pub fn handle(self: *Server, sync: bool) void {
+        if (sync) {
+            self.run() catch |err| {
+                std.debug.print("Error in server run: {}\n", .{err});
+            };
+        } else {
+            self.runThreaded() catch |err| {
+                std.debug.print("Error in server run: {}\n", .{err});
+            };
+        }
     }
 
     pub fn run(self: *Server) !void {
+        const put = "example.com.";
+        var ip = [_]u8{ 192, 168, 1, 1 };
+        try self.dns_store.put(hashFn(put), ip[0..]);
+
+        const addr = try net.Address.parseIp(self.options.bind_addr, self.options.bind_port);
+        try posix.bind(self.sock, &addr.any, addr.getOsSockLen());
+
+        try self.loop.addListener(self.sock);
+
+        std.debug.print("Listen on {any}\n", .{addr});
+
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
+
+        while (running.load(.acquire)) {
+            const ready_events = try self.loop.wait(READ_TIMEOUT_MS);
+            for (ready_events) |event| {
+                //std.debug.print("GOT: {}, EXPECTED: {}\n", .{ event.filter, posix.system.EVFILT_READ });
+                if (polling_condition(event)) {
+                    var client = Client{
+                        .allocator = alloc,
+                        .socket = self.sock,
+                        .cache_ptr = &self.dns_cache,
+                        .store_ptr = &self.dns_store,
+                        .resolv = self.resolv[0..],
+                    };
+                    var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
+                    client.task.recv_len = try posix.recvfrom(
+                        self.sock,
+                        client.task.buffer[0..],
+                        posix.SOCK.NONBLOCK,
+                        &client.task.client_addr.any,
+                        &from_addrlen,
+                    );
+                    if (client.task.recv_len > 0) {
+                        client.handle();
+                        _ = arena.reset(.retain_capacity);
+                    }
+                }
+            }
+        }
+        try self.loop.removeListener(self.sock);
+    }
+
+    // So it turnes out that threading might actually be adding a little be of extra overhead here
+    // Im going to keep the multithreaded implementation here anyways because I think the way it
+    // works is facinating. I'm saying 'overhead' here because its hard to tell which method is faster,
+    // in fact they are basically even
+    pub fn runThreaded(self: *Server) !void {
+        self.task_queue = TaskQueue.init(self.worker_allocator.allocator());
+        var task_queue = self.task_queue.?;
         // TODO: Change this line with local dns info
         const put = "example.com.";
-        try self.dns_store.put(hashFn(put), &[4]u8{ 192, 168, 1, 1 });
+        var ip = [_]u8{ 192, 168, 1, 1 };
+        try self.dns_store.put(hashFn(put), ip[0..]);
 
         const addr = try net.Address.parseIp(self.options.bind_addr, self.options.bind_port);
         try posix.bind(self.sock, &addr.any, addr.getOsSockLen());
@@ -121,25 +180,19 @@ pub const Server = struct {
             for (ready_events) |event| {
                 //std.debug.print("GOT: {}, EXPECTED: {}\n", .{ event.filter, posix.system.EVFILT_READ });
                 if (polling_condition(event)) {
-                    var buffer: [BUFFER_SIZE]u8 = undefined;
-                    var from_addr: net.Address = undefined;
+                    var task = Task{};
                     var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
-                    const recv_len = try posix.recvfrom(
+                    task.recv_len = try posix.recvfrom(
                         self.sock,
-                        buffer[0..],
+                        task.buffer[0..],
                         0,
-                        &from_addr.any,
+                        &task.client_addr.any,
                         &from_addrlen,
                     );
-                    if (recv_len > 0) {
+                    if (task.recv_len > 0) {
                         queue_lock.lock();
                         defer queue_lock.unlock();
-                        var task = Task{
-                            .client_addr = from_addr,
-                            .recv_len = recv_len,
-                        };
-                        std.mem.copyForwards(u8, task.buffer[0..], buffer[0..]);
-                        try self.task_queue.pushBack(task);
+                        try task_queue.pushBack(task);
                         queue_condition.signal();
                     }
                 }
@@ -149,45 +202,49 @@ pub const Server = struct {
         // Cleanup
         queue_lock.lock();
         queue_condition.broadcast();
-        self.task_queue.deinit();
+        task_queue.deinit();
         queue_lock.unlock();
         pool.deinit();
         try self.loop.removeListener(self.sock);
     }
 
     fn worker(self: *Server) void {
-        var arena = std.heap.ArenaAllocator.init(self.worker_allocator.allocator());
-        const alloc = arena.allocator();
-        while (running.load(.acquire)) {
-            queue_lock.lock();
-            while (self.task_queue.isEmpty() and running.load(.acquire)) {
-                queue_condition.wait(&queue_lock);
+        if (self.task_queue) |*task_queue| {
+            var arena = std.heap.ArenaAllocator.init(self.worker_allocator.allocator());
+            const alloc = arena.allocator();
+            while (running.load(.acquire)) {
+                queue_lock.lock();
+                while (task_queue.isEmpty() and running.load(.acquire)) {
+                    queue_condition.wait(&queue_lock);
+                }
+                if (task_queue.popFront()) |task| {
+                    queue_lock.unlock();
+                    var client = Client{
+                        .socket = self.sock,
+                        .task = task,
+                        .allocator = alloc,
+                        .store_ptr = &self.dns_store,
+                        .cache_ptr = &self.dns_cache,
+                        .resolv = self.resolv[0..],
+                    };
+                    client.handle();
+                    _ = arena.reset(.retain_capacity);
+                } else {
+                    queue_lock.unlock();
+                }
             }
-            if (self.task_queue.popFront()) |task| {
-                queue_lock.unlock();
-                var client = Client{
-                    .socket = self.sock,
-                    .task = task,
-                    .allocator = alloc,
-                    .store_ptr = &self.dns_store,
-                    .cache_ptr = &self.dns_cache,
-                    .resolv = self.resolv[0..],
-                };
-                client.handle();
-                _ = arena.reset(.retain_capacity);
-            } else {
-                queue_lock.unlock();
-            }
+            arena.deinit();
+        } else {
+            @panic("Worker can only be run from runThreaded()");
         }
-        arena.deinit();
     }
 };
 
 pub const Client = struct {
     socket: posix.fd_t,
-    task: Task,
+    task: Task = undefined,
     allocator: Allocator,
-    store_ptr: *AutoHashMap(u64, []const u8),
+    store_ptr: *AutoHashMap(u64, []u8),
     cache_ptr: *LRU(dns.Message),
     resolv: []const u8,
 
@@ -227,10 +284,10 @@ pub const Client = struct {
 
         var len: usize = 0;
 
-        var packet = try dns.Message.fromBytes(self.allocator, query);
-        defer packet.deinit();
+        const packet = try dns.Message.fromBytes(self.allocator, query);
+        //defer packet.deinit();
         var response_packet = dns.Message.init(self.allocator);
-        defer response_packet.deinit();
+        //defer response_packet.deinit();
 
         createDnsResponse(&response_packet, packet);
         ////std.debug.print("Received DNS Packet: {any}\n", .{packet});
@@ -259,7 +316,7 @@ pub const Client = struct {
                 // Return local response
                 //std.debug.print("Found in local store: {s} -> {any}\n", .{ qname, address });
 
-                try updateDnsResponse(&response_packet, question.*, address[0..]);
+                try updateDnsResponse(&response_packet, question.*, address);
                 const bytes = try response_packet.bytes(&response);
                 len = bytes.len;
             } else {
@@ -278,7 +335,7 @@ pub const Client = struct {
         _ = try posix.sendto(
             self.socket,
             response[0..len],
-            0,
+            posix.SOCK.NONBLOCK,
             &self.task.client_addr.any,
             self.task.client_addr.getOsSockLen(),
         );
@@ -332,7 +389,7 @@ inline fn createDnsResponse(message: *dns.Message, packet: dns.Message) void {
     };
 }
 
-inline fn updateDnsResponse(message: *dns.Message, question: dns.Question, address: []const u8) !void {
+inline fn updateDnsResponse(message: *dns.Message, question: dns.Question, address: []u8) !void {
     // TODO: Something here is causing more memory to be allocated than we need
     var q = try message.addQuestion();
     q.qtype = question.qtype;
@@ -413,12 +470,13 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    //const allocator = std.heap.raw_c_allocator;
     const stdin = std.io.getStdIn().reader();
 
     var server = try Server.init(allocator, .{ .bind_port = 5553 });
     defer server.deinit();
 
-    var main_thread = try Thread.spawn(.{}, Server.handle, .{&server});
+    var main_thread = try Thread.spawn(.{}, Server.handle, .{ &server, true });
 
     running.store(true, .monotonic);
     while (running.load(.acquire)) {

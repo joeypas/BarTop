@@ -2,12 +2,13 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayList;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const assert = std.debug.assert;
 const Reader = @import("reader.zig");
 const bigToNative = std.mem.bigToNative;
 const nativeToBig = std.mem.nativeToBig;
 
-pub const Name = ArrayList(ArrayList(u8));
+pub const Name = ArrayListUnmanaged(ArrayListUnmanaged(u8));
 pub const QList = ArrayList(Question);
 pub const RList = ArrayList(Record);
 
@@ -130,7 +131,7 @@ pub const Message = struct {
     pub fn addQuestion(self: *Message) !*Question {
         var question = try self.questions.addOne();
         question.allocator = self.allocator;
-        question.qname = ArrayList(ArrayList(u8)).init(self.allocator);
+        question.qname = try Name.initCapacity(self.allocator, 0);
         return question;
     }
 
@@ -139,8 +140,8 @@ pub const Message = struct {
     pub fn addAnswer(self: *Message) !*Record {
         var answer = try self.answers.addOne();
         answer.allocator = self.allocator;
-        answer.name = ArrayList(ArrayList(u8)).init(self.allocator);
-        answer.rdata = ArrayList(u8).init(self.allocator);
+        answer.name = try Name.initCapacity(self.allocator, 0);
+        //answer.rdata = ArrayList(u8).init(self.allocator);
         return answer;
     }
 
@@ -149,8 +150,8 @@ pub const Message = struct {
     pub fn addAuthority(self: *Message) !*Record {
         var authority = try self.authorities.addOne();
         authority.allocator = self.allocator;
-        authority.name = ArrayList(ArrayList(u8)).init(self.allocator);
-        authority.rdata = ArrayList(u8).init(self.allocator);
+        authority.name = try Name.initCapacity(self.allocator, 0);
+        //authority.rdata = ArrayList(u8).init(self.allocator);
         return authority;
     }
 
@@ -159,8 +160,8 @@ pub const Message = struct {
     pub fn addAdditional(self: *Message) !*Record {
         var additional = try self.additionals.addOne();
         additional.allocator = self.allocator;
-        additional.name = ArrayList(ArrayList(u8)).init(self.allocator);
-        additional.rdata = ArrayList(u8).init(self.allocator);
+        additional.name = try Name.initCapacity(self.allocator, 0);
+        //additional.rdata = ArrayList(u8).init(self.allocator);
         return additional;
     }
 
@@ -297,7 +298,7 @@ pub const Header = packed struct(u96) {
 };
 
 pub const Question = struct {
-    qname: Name,
+    qname: Name = .{},
     qtype: QType,
     qclass: QClass,
     allocator: Allocator,
@@ -336,10 +337,10 @@ pub const Question = struct {
     };
 
     pub fn deinit(self: *Question) void {
-        for (self.qname.items) |part| {
-            part.deinit();
+        for (self.qname.items) |*part| {
+            part.deinit(self.allocator);
         }
-        self.qname.deinit();
+        self.qname.deinit(self.allocator);
     }
 
     /// Convert a Question to bytes in big endian order
@@ -390,9 +391,9 @@ pub const Question = struct {
     }
 
     pub fn qnameAppendSlice(self: *Question, slice: []const u8) !void {
-        const list = try self.qname.addOne();
-        list.* = ArrayList(u8).init(self.allocator);
-        try list.appendSlice(slice);
+        const list = try self.qname.addOne(self.allocator);
+        list.* = .{};
+        try list.appendSlice(self.allocator, slice);
     }
 
     pub fn qnameAppendSlice2D(self: *Question, slice: [][]const u8) !void {
@@ -400,18 +401,19 @@ pub const Question = struct {
             // Because of the way that a record is deinitialized, a record must own memory
             // of the slices contained in name to avoid an invalid free,
             // and the easiest way to do this is by copying the slice
-            const list = try self.qname.addOne();
-            list.* = ArrayList(u8).init(self.allocator);
-            try list.appendSlice(part);
+            const list = try self.qname.addOne(self.allocator);
+            list.* = .{};
+            try list.appendSlice(self.allocator, part);
         }
     }
 
-    pub fn qnameCloneOther(self: *Question, other: ArrayList(ArrayList(u8))) !void {
+    pub fn qnameCloneOther(self: *Question, other: Name) !void {
+        self.qname = other;
         for (other.items) |*item| {
             //try self.qname.append(try item.clone());
-            var tmp = try self.qname.addOne();
-            tmp.* = ArrayList(u8).init(self.allocator);
-            try tmp.appendSlice(item.items);
+            const tmp = try self.qname.addOne(self.allocator);
+            tmp.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, item.items.len);
+            try tmp.appendSlice(self.allocator, item.items);
         }
     }
 
@@ -440,7 +442,7 @@ pub const Question = struct {
 
     pub fn clone(self: *Question) !Question {
         var question = Question{
-            .qname = ArrayList(ArrayList(u8)).init(self.allocator),
+            .qname = Name.init(self.allocator),
             .qtype = self.qtype,
             .qclass = self.qclass,
             .allocator = self.allocator,
@@ -456,7 +458,7 @@ pub const Record = struct {
     class: Class,
     ttl: u32,
     rdlength: u16,
-    rdata: ArrayList(u8),
+    rdata: ArrayListUnmanaged(u8) = .{},
     allocator: Allocator,
 
     pub const Type = enum(u16) {
@@ -488,11 +490,11 @@ pub const Record = struct {
     };
 
     pub fn deinit(self: *Record) void {
-        for (self.name.items) |part| {
-            part.deinit();
+        for (self.name.items) |*part| {
+            part.deinit(self.allocator);
         }
-        self.name.deinit();
-        self.rdata.deinit();
+        self.name.deinit(self.allocator);
+        self.rdata.deinit(self.allocator);
     }
 
     /// Convert a Record to bytes in big endian order
@@ -558,8 +560,7 @@ pub const Record = struct {
     }
 
     pub fn nameAppendSlice(self: *Record, slice: []const u8) !void {
-        const list = try self.name.addOne();
-        list.* = ArrayList(u8).init(self.allocator);
+        const list = try self.name.addOne(self.allocator);
         try list.appendSlice(slice);
     }
 
@@ -568,28 +569,29 @@ pub const Record = struct {
             // Because of the way that a record is deinitialized, a record must own memory
             // of the slices contained in name to avoid an invalid free,
             // and the easiest way to do this is by copying the slice
-            const list = try self.name.addOne();
-            list.* = ArrayList(u8).init(self.allocator);
-            try list.appendSlice(part);
+            const list = try self.name.addOne(self.allocator);
+            list.* = .{};
+            try list.appendSlice(self.allocator, part);
         }
     }
 
-    pub fn nameCloneOther(self: *Record, other: ArrayList(ArrayList(u8))) !void {
+    pub fn nameCloneOther(self: *Record, other: Name) !void {
         for (other.items) |*item| {
-            var tmp = try self.name.addOne();
-            tmp.* = ArrayList(u8).init(self.allocator);
-            try tmp.appendSlice(item.items);
+            const tmp = try self.name.addOne(self.allocator);
+            tmp.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
+            try tmp.appendSlice(self.allocator, item.items);
         }
     }
 
-    pub fn rdataAppendSlice(self: *Record, slice: []const u8) !void {
-        try self.rdata.appendSlice(slice);
+    pub fn rdataAppendSlice(self: *Record, slice: []u8) !void {
+        self.rdata = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
+        try self.rdata.appendSlice(self.allocator, slice);
         //self.rdata.shrinkAndFree(slice.len);
     }
 
-    pub fn rdataCloneOther(self: *Record, other: ArrayList(u8)) !void {
+    pub fn rdataCloneOther(self: *Record, other: ArrayListUnmanaged(u8)) !void {
         self.rdata.deinit();
-        self.rdata = try other.clone();
+        self.rdata = try other.clone(self.allocator);
     }
 
     pub fn nameToStringAlloc(self: *Record, allocator: Allocator) ![]const u8 {
@@ -604,7 +606,7 @@ pub const Record = struct {
 
     pub fn clone(self: *Record) !Record {
         var record = Record{
-            .name = ArrayList(ArrayList(u8)).init(self.allocator),
+            .name = Name.init(self.allocator),
             .type = self.type,
             .class = self.class,
             .ttl = self.ttl,
@@ -637,6 +639,7 @@ const Parser = struct {
     /// Resulting Message needs to be deinitialized
     pub fn read(self: *Parser) !Message {
         var message = Message.init(self.alloc);
+        errdefer message.deinit();
 
         // Parse the packet header
         message.header = try self.readHeader();
@@ -688,8 +691,9 @@ const Parser = struct {
         record.*.ttl = try self.reader.read(u32);
         record.*.rdlength = try self.reader.read(u16);
         //const slice = try record.*.rdata.addManyAsSlice(@as(usize, record.*.rdlength));
-
-        try readList(&record.rdata, &self.reader, @as(usize, record.rdlength));
+        record.*.rdata = try ArrayListUnmanaged(u8).initCapacity(self.alloc, @intCast(record.rdlength));
+        //errdefer record.rdata.deinit(self.alloc);
+        try readList(self.alloc, &record.rdata, &self.reader, @as(usize, record.rdlength));
     }
 
     pub fn readHeader(self: *Parser) !Header {
@@ -716,7 +720,7 @@ const Parser = struct {
 
     /// Reads name/qname field from packet, returns list of strings
     /// *Internal use only
-    inline fn handleName(self: *Parser, list: *ArrayList(ArrayList(u8))) !void {
+    inline fn handleName(self: *Parser, list: *Name) !void {
         //var list = std.ArrayList([]u8).init(self.alloc);
         //errdefer list.deinit();
 
@@ -735,22 +739,23 @@ const Parser = struct {
 
     /// Reads a list of u8 values from the reader into the buffer
     /// *Internal use only
-    inline fn readList(buf: *ArrayList(u8), reader: *Reader, size: usize) !void {
+    inline fn readList(allocator: Allocator, buf: *ArrayListUnmanaged(u8), reader: *Reader, size: usize) !void {
         for (0..size) |i| {
             _ = i;
-            try buf.append(try reader.read(u8));
+            try buf.append(allocator, try reader.read(u8));
         }
     }
 
     /// Reads name fields of packet
     /// *Internal use only
-    inline fn read2DList(self: *Parser, reader: *Reader, list: *ArrayList(ArrayList(u8))) !void {
+    inline fn read2DList(self: *Parser, reader: *Reader, list: *Name) !void {
         var size: u8 = try reader.read(u8);
         var i: usize = 0;
         while (size != 0x00) : (i += 1) {
-            const buf = try list.addOne();
-            buf.* = ArrayList(u8).init(self.alloc);
-            try readList(buf, reader, @as(usize, size));
+            const buf = try list.addOne(self.alloc);
+            //buf.* = ArrayList(u8).init(self.alloc);
+            buf.* = .{};
+            try readList(self.alloc, buf, reader, @as(usize, size));
             size = try reader.read(u8);
         }
     }
