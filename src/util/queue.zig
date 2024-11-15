@@ -4,6 +4,7 @@ const Allocator = std.mem.Allocator;
 pub fn DualQueue(comptime T: type) type {
     return struct {
         const Self = @This();
+        const MemoryPool = std.heap.MemoryPoolExtra(DualQueue(T).Node, .{ .alignment = @alignOf(T) });
 
         const Node = struct {
             value: T,
@@ -11,14 +12,14 @@ pub fn DualQueue(comptime T: type) type {
             next: ?*Node,
         };
 
-        allocator: Allocator,
+        pool: MemoryPool,
         head: ?*Node = null,
         tail: ?*Node = null,
         len: usize = 0,
 
         pub fn init(allocator: Allocator) Self {
             return Self{
-                .allocator = allocator,
+                .pool = MemoryPool.init(allocator),
                 .head = null,
                 .tail = null,
                 .len = 0,
@@ -26,19 +27,20 @@ pub fn DualQueue(comptime T: type) type {
         }
 
         pub fn deinit(self: *Self) void {
-            var current = self.head;
-            while (current) |node| {
-                const next_node = node.next;
-                self.allocator.destroy(node);
-                current = next_node;
-            }
+            //var current = self.head;
+            //while (current) |node| {
+            //    const next_node = node.next;
+            //    self.pool.destroy(node);
+            //    current = next_node;
+            //}
+            self.pool.deinit();
             self.head = null;
             self.tail = null;
             self.len = 0;
         }
 
         pub fn pushFront(self: *Self, value: T) !void {
-            const node = try self.allocator.create(Node);
+            const node = try self.pool.create();
             node.* = Node{
                 .value = value,
                 .prev = null,
@@ -54,7 +56,7 @@ pub fn DualQueue(comptime T: type) type {
         }
 
         pub fn pushBack(self: *Self, value: T) !void {
-            const node = try self.allocator.create(Node);
+            const node = try self.pool.create();
             node.* = Node{
                 .value = value,
                 .prev = self.tail,
@@ -78,7 +80,7 @@ pub fn DualQueue(comptime T: type) type {
                 } else {
                     self.tail = null;
                 }
-                self.allocator.destroy(head_node);
+                self.pool.destroy(head_node);
                 self.len -= 1;
                 return value;
             } else {
@@ -95,7 +97,7 @@ pub fn DualQueue(comptime T: type) type {
                 } else {
                     self.head = null;
                 }
-                self.allocator.destroy(tail_node);
+                self.pool.destroy(tail_node);
                 self.len -= 1;
                 return value;
             } else {
