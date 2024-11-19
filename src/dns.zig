@@ -33,19 +33,19 @@ pub const Message = struct {
 
     pub fn deinit(self: *Message) void {
         for (self.questions.items) |*q| {
-            q.deinit();
+            q.*.deinit();
         }
         self.questions.deinit();
         for (self.answers.items) |*r| {
-            r.deinit();
+            r.*.deinit();
         }
         self.answers.deinit();
         for (self.authorities.items) |*r| {
-            r.deinit();
+            r.*.deinit();
         }
         self.authorities.deinit();
         for (self.additionals.items) |*r| {
-            r.deinit();
+            r.*.deinit();
         }
         self.additionals.deinit();
     }
@@ -408,12 +408,10 @@ pub const Question = struct {
     }
 
     pub fn qnameCloneOther(self: *Question, other: Name) !void {
-        self.qname = other;
         for (other.items) |*item| {
             //try self.qname.append(try item.clone());
             const tmp = try self.qname.addOne(self.allocator);
-            tmp.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, item.items.len);
-            try tmp.appendSlice(self.allocator, item.items);
+            tmp.* = try item.clone(self.allocator);
         }
     }
 
@@ -578,8 +576,7 @@ pub const Record = struct {
     pub fn nameCloneOther(self: *Record, other: Name) !void {
         for (other.items) |*item| {
             const tmp = try self.name.addOne(self.allocator);
-            tmp.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
-            try tmp.appendSlice(self.allocator, item.items);
+            tmp.* = try item.clone(self.allocator);
         }
     }
 

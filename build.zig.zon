@@ -27,6 +27,10 @@
             .url = "git+https://github.com/joeypas/zig-clap#9b3e90e5983906acb3bc00098865ef16cb7443bb",
             .hash = "1220cfe86e880d8432d990cf96d6a49c62da6beab53322efc25490d11109b80962b7",
         },
+        .libxev = .{
+            .url = "git+https://github.com/mitchellh/libxev#6afcde929ee15617db4848055963d1a72e7fb055",
+            .hash = "12208fa7b1c9723ab1e97548595cda3810e881e17e8a7d367eaab75b3408848277d5",
+        },
     },
     .paths = .{
         "build.zig",

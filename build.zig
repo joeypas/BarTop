@@ -16,6 +16,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const clap = b.dependency("clap", .{});
+    const xev = b.dependency("libxev", .{});
 
     var list: [2]*std.Build.Step.Compile = undefined;
 
@@ -25,6 +26,8 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    list[0].root_module.addImport("xev", xev.module("xev"));
 
     list[1] = b.addExecutable(.{
         .name = "Client",
