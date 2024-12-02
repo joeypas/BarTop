@@ -10,6 +10,16 @@ const AtomicValue = std.atomic.Value;
 const AutoHashMap = std.AutoHashMap;
 const LRU = @import("util/lru.zig").LRU;
 
+// Logging setup
+const level: std.log.Level = switch (@import("builtin").mode) {
+    .Debug => .debug,
+    else => .info,
+};
+pub const std_options = .{
+    .log_level = level,
+};
+const log = std.log.scoped(.sever);
+
 // Constants
 pub const BUFFER_SIZE = 512;
 const READ_TIMEOUT_MS = 6000;
@@ -27,6 +37,7 @@ pub const Options = struct {
 
 const xev = @import("xev");
 const UDP = xev.UDP;
+
 pub const ServerXev = struct {
     options: Options,
     allocator: Allocator,
@@ -40,12 +51,27 @@ pub const ServerXev = struct {
 
     pub fn init(allocator: Allocator, comptime options: Options) !ServerXev {
         const addr = try net.Address.parseIp(options.bind_addr, options.bind_port);
-        const resolv = try getResolv(allocator, options.external_server);
+        const resolv = try getResolv(
+            allocator,
+            options.external_server,
+        );
         errdefer allocator.free(resolv);
+
+        var dns_store = AutoHashMap(u64, []u8).init(allocator);
+        errdefer dns_store.deinit();
+
+        // TODO: Populate store with a zone definition
+        // This is just a placeholder for testing
+        const put = "example.com.";
+        var ip_heap = try allocator.alloc(u8, 4);
+        errdefer allocator.free(ip_heap);
+        @memcpy(ip_heap, &[_]u8{ 192, 168, 1, 1 });
+        try dns_store.put(hashFn(put), ip_heap[0..]);
+
         return .{
             .allocator = allocator,
             .dns_cache = LRU(dns.Message).init(allocator, 100),
-            .dns_store = AutoHashMap(u64, []u8).init(allocator),
+            .dns_store = dns_store,
             .bind_addr = addr,
             .options = options,
             .resolv = resolv,
@@ -54,18 +80,22 @@ pub const ServerXev = struct {
     }
 
     pub fn deinit(self: *ServerXev) void {
-        var itr = self.dns_cache.map.iterator();
-        while (itr.next()) |item| {
+        var cache_itr = self.dns_cache.map.iterator();
+        var store_itr = self.dns_store.iterator();
+        while (cache_itr.next()) |item| {
             item.value_ptr.*.value.deinit();
+        }
+        while (store_itr.next()) |item| {
+            self.allocator.free(item.value_ptr.*);
         }
         self.allocator.free(self.resolv);
         self.dns_cache.deinit();
         self.dns_store.deinit();
     }
 
-    pub fn handle(self: *ServerXev, _: bool) void {
+    pub fn handle(self: *ServerXev) void {
         self.run() catch |err| {
-            std.debug.print("Error in server run: {}\n", .{err});
+            log.err("Error in server run: {}", .{err});
         };
     }
 
@@ -79,19 +109,25 @@ pub const ServerXev = struct {
         var loop = try xev.Loop.init(.{ .thread_pool = &thread_pool });
         defer loop.deinit();
 
-        const put = "example.com.";
-        var ip = [_]u8{ 192, 168, 1, 1 };
-        try self.dns_store.put(hashFn(put), ip[0..]);
-
         try self.udp.bind(self.bind_addr);
-        std.debug.print("Listen on {any}\n", .{self.bind_addr});
+        log.info("Listen on {any}", .{self.bind_addr});
 
         var recv_buf: [BUFFER_SIZE]u8 = undefined;
 
-        self.udp.read(&loop, &self.c_read, &self.s_read, .{ .slice = &recv_buf }, ServerXev, self, readCallBack);
+        self.udp.read(
+            &loop,
+            &self.c_read,
+            &self.s_read,
+            .{ .slice = &recv_buf },
+            ServerXev,
+            self,
+            readCallBack,
+        );
+
         while (running.load(.acquire)) {
             try loop.run(.no_wait);
         }
+
         loop.stop();
         self.udp.close(&loop, &self.c_read, void, null, (struct {
             fn callback(
@@ -110,22 +146,45 @@ pub const ServerXev = struct {
     }
 
     // Callback for after reading from socket
-    fn readCallBack(ud: ?*ServerXev, _: *xev.Loop, _: *xev.Completion, _: *xev.UDP.State, addr: net.Address, udp: UDP, buf: xev.ReadBuffer, r: xev.ReadError!usize) xev.CallbackAction {
-        const recv_len = r catch return .rearm;
+    fn readCallBack(
+        ud: ?*ServerXev,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        _: *xev.UDP.State,
+        addr: net.Address,
+        udp: UDP,
+        buf: xev.ReadBuffer,
+        r: xev.ReadError!usize,
+    ) xev.CallbackAction {
+        const recv_len = r catch |err| {
+            log.warn("Read error: {}\n", .{err});
+            return .rearm;
+        };
         const user_data = ud.?;
         var response_buf: [BUFFER_SIZE]u8 = undefined;
         var query = switch (buf) {
             xev.ReadBuffer.slice => |slice| slice,
             xev.ReadBuffer.array => |array| array[0..],
         };
-        const response: []const u8 = handleDnsQuery(user_data, query[0..recv_len], &response_buf) catch |err| {
-            std.debug.print("Error in HandleQuery: {}\n", .{err});
+        const response: []const u8 = handleDnsQuery(
+            user_data,
+            query[0..recv_len],
+            &response_buf,
+        ) catch |err| {
+            log.warn("Error in HandleQuery: {}", .{err});
             return .rearm;
         };
 
         // TODO: I know this is deffinetly not the right way to do things
-        _ = posix.sendto(udp.fd, response, 0, &addr.any, addr.getOsSockLen()) catch |err| {
-            std.debug.print("ERROR IN SENDTO: {}\n", .{err});
+        // Im basically just YOLOing a sendto instead of queueing up a write
+        _ = posix.sendto(
+            udp.fd,
+            response,
+            0,
+            &addr.any,
+            addr.getOsSockLen(),
+        ) catch |err| {
+            log.err("Error in sendto: {}", .{err});
             return xev.CallbackAction.rearm;
         };
 
@@ -149,7 +208,8 @@ pub const ServerXev = struct {
         defer response_packet.deinit();
         defer packet.deinit();
         createDnsResponse(&response_packet, packet);
-        ////std.debug.print("Received DNS Packet: {any}\n", .{packet});
+
+        log.debug("Received DNS Packet: {any}", .{packet.header});
 
         for (packet.questions.items) |*question| {
             var qname_buf: [BUFFER_SIZE]u8 = undefined;
@@ -162,7 +222,7 @@ pub const ServerXev = struct {
                 var non_const_response = cached_response.*;
 
                 // Return cached response
-                //std.debug.print("Cache hit for {s}\n", .{qname});
+                log.debug("Cache hit for {s}", .{qname});
                 non_const_response.header.id = packet.header.id;
 
                 const bytes = try non_const_response.bytes(response);
@@ -170,7 +230,7 @@ pub const ServerXev = struct {
                 len = bytes.len;
             } else if (user_data.dns_store.get(qname_hash)) |address| {
                 // Return local response
-                //std.debug.print("Found in local store: {s} -> {any}\n", .{ qname, address });
+                log.debug("Found in local store: {s} -> {any}", .{ qname, address });
 
                 try updateDnsResponse(&response_packet, question.*, address);
                 const bytes = try response_packet.bytes(response);
@@ -178,9 +238,16 @@ pub const ServerXev = struct {
             } else {
                 // TODO: This only works if theres one question
                 // Query external server
-                //std.debug.print("Not found in local store, querying external server...\n", .{});
-                const external_len = try queryExternalServer(user_data.resolv, query, response);
-                const res = try dns.Message.fromBytes(user_data.dns_cache.allocator, response[0..external_len]);
+                log.debug("Not found in local store, querying external server...", .{});
+                const external_len = try queryExternalServer(
+                    user_data.resolv,
+                    query,
+                    response,
+                );
+                const res = try dns.Message.fromBytes(
+                    user_data.dns_cache.allocator,
+                    response[0..external_len],
+                );
                 try user_data.dns_cache.put(qname_hash, res);
                 len = external_len;
             }
@@ -189,7 +256,7 @@ pub const ServerXev = struct {
     }
 };
 
-inline fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !usize {
+fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !usize {
     // TODO: Placeholder implementation
     const external_server_port = 53;
 
@@ -212,7 +279,13 @@ inline fn queryExternalServer(resolv: []const u8, query: []const u8, response: [
     );
 
     var buf: [512]u8 = undefined;
-    const recv_bytes = try posix.recvfrom(sock, buf[0..], 0, &from_addr, &from_addrlen);
+    const recv_bytes = try posix.recvfrom(
+        sock,
+        buf[0..],
+        0,
+        &from_addr,
+        &from_addrlen,
+    );
     std.mem.copyForwards(u8, response, buf[0..recv_bytes]);
     return recv_bytes;
 }
@@ -289,7 +362,11 @@ fn getResolv(allocator: Allocator, external_server: ?[]const u8) ![]const u8 {
 
     if (std.mem.indexOf(u8, resolv_contents, "nameserver")) |i| {
         const start_index = i + 11;
-        const end_index = std.mem.indexOf(u8, resolv_contents[start_index..], "\n").? + start_index;
+        const end_index = std.mem.indexOf(
+            u8,
+            resolv_contents[start_index..],
+            "\n",
+        ).? + start_index;
 
         const ret = try allocator.alloc(u8, end_index - start_index);
         std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
@@ -320,14 +397,25 @@ pub fn main() !void {
     //const allocator = std.heap.raw_c_allocator;
     const stdin = std.io.getStdIn().reader();
 
-    var server = try ServerXev.init(allocator, .{ .bind_port = 5553 });
+    var server = try ServerXev.init(
+        allocator,
+        .{ .bind_port = 5553 },
+    );
     defer server.deinit();
 
-    var main_thread = try Thread.spawn(.{}, ServerXev.handle, .{ &server, true });
+    var main_thread = try Thread.spawn(
+        .{},
+        ServerXev.handle,
+        .{&server},
+    );
 
     running.store(true, .monotonic);
     while (running.load(.acquire)) {
-        const in = try stdin.readUntilDelimiterAlloc(allocator, '\n', 100);
+        const in = try stdin.readUntilDelimiterAlloc(
+            allocator,
+            '\n',
+            100,
+        );
         defer allocator.free(in);
         if (std.mem.eql(u8, in, "q")) {
             running.store(false, .release);

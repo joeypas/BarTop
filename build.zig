@@ -15,8 +15,14 @@ pub fn build(b: *std.Build) void {
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
 
-    const clap = b.dependency("clap", .{});
-    const xev = b.dependency("libxev", .{});
+    const clap = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const xev = b.dependency("libxev", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     var list: [2]*std.Build.Step.Compile = undefined;
 

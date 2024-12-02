@@ -559,7 +559,8 @@ pub const Record = struct {
 
     pub fn nameAppendSlice(self: *Record, slice: []const u8) !void {
         const list = try self.name.addOne(self.allocator);
-        try list.appendSlice(slice);
+        list.* = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
+        try list.appendSlice(self.allocator, slice);
     }
 
     pub fn nameAppendSlice2D(self: *Record, slice: [][]const u8) !void {
@@ -568,7 +569,7 @@ pub const Record = struct {
             // of the slices contained in name to avoid an invalid free,
             // and the easiest way to do this is by copying the slice
             const list = try self.name.addOne(self.allocator);
-            list.* = .{};
+            list.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
             try list.appendSlice(self.allocator, part);
         }
     }
@@ -580,14 +581,14 @@ pub const Record = struct {
         }
     }
 
-    pub fn rdataAppendSlice(self: *Record, slice: []u8) !void {
+    pub fn rdataAppendSlice(self: *Record, slice: []const u8) !void {
         self.rdata = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
         try self.rdata.appendSlice(self.allocator, slice);
         //self.rdata.shrinkAndFree(slice.len);
     }
 
     pub fn rdataCloneOther(self: *Record, other: ArrayListUnmanaged(u8)) !void {
-        self.rdata.deinit();
+        self.rdata.deinit(self.allocator);
         self.rdata = try other.clone(self.allocator);
     }
 
