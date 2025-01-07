@@ -9,6 +9,8 @@ const Mutex = std.Thread.Mutex;
 const AtomicValue = std.atomic.Value;
 const AutoHashMap = std.AutoHashMap;
 const LRU = @import("util/lru.zig").LRU;
+const CompletionPool = std.heap.MemoryPool(xev.Completion);
+const StatePool = std.heap.MemoryPool(UDP.State);
 
 // Logging setup
 const level: std.log.Level = switch (@import("builtin").mode) {
@@ -47,7 +49,9 @@ pub const ServerXev = struct {
     resolv: []const u8,
     udp: UDP,
     c_read: xev.Completion = undefined,
-    s_read: UDP.State = undefined,
+    c_write: xev.Completion = undefined,
+    completion_pool: CompletionPool,
+    state_pool: StatePool,
 
     pub fn init(allocator: Allocator, comptime options: Options) !ServerXev {
         const addr = try net.Address.parseIp(options.bind_addr, options.bind_port);
@@ -76,6 +80,8 @@ pub const ServerXev = struct {
             .options = options,
             .resolv = resolv,
             .udp = try UDP.init(addr),
+            .completion_pool = CompletionPool.init(allocator),
+            .state_pool = StatePool.init(allocator),
         };
     }
 
@@ -89,6 +95,8 @@ pub const ServerXev = struct {
             self.allocator.free(item.value_ptr.*);
         }
         self.allocator.free(self.resolv);
+        self.completion_pool.deinit();
+        self.state_pool.deinit();
         self.dns_cache.deinit();
         self.dns_store.deinit();
     }
@@ -112,19 +120,8 @@ pub const ServerXev = struct {
         try self.udp.bind(self.bind_addr);
         log.info("Listen on {any}", .{self.bind_addr});
 
-        var recv_buf: [BUFFER_SIZE]u8 = undefined;
-
-        self.udp.read(
-            &loop,
-            &self.c_read,
-            &self.s_read,
-            .{ .slice = &recv_buf },
-            ServerXev,
-            self,
-            readCallBack,
-        );
-
         while (running.load(.acquire)) {
+            try self.read(&loop);
             try loop.run(.no_wait);
         }
 
@@ -145,57 +142,93 @@ pub const ServerXev = struct {
         try loop.run(.until_done);
     }
 
+    pub fn read(self: *ServerXev, loop: *xev.Loop) !void {
+        var recv_buf: [BUFFER_SIZE]u8 = undefined;
+        const c_read = try self.completion_pool.create();
+        const s_read = try self.state_pool.create();
+        self.udp.read(
+            loop,
+            c_read,
+            s_read,
+            .{ .slice = &recv_buf },
+            ServerXev,
+            self,
+            readCallBack,
+        );
+    }
+
+    pub fn write(self: *ServerXev, loop: *xev.Loop, addr: net.Address, c: *xev.Completion, s: *UDP.State, buf: []u8) !void {
+        const response_buf = try self.allocator.alloc(u8, 512);
+        const len = try handleDnsQuery(
+            self,
+            buf[0..],
+            response_buf,
+        );
+        _ = len;
+
+        //defer self.message_pool.destroy(buf);
+
+        self.udp.write(
+            loop,
+            c,
+            s,
+            addr,
+            .{ .slice = response_buf },
+            ServerXev,
+            self,
+            (struct {
+                fn callback(
+                    user_data: ?*ServerXev,
+                    _: *xev.Loop,
+                    cw: *xev.Completion,
+                    sw: *UDP.State,
+                    _: UDP,
+                    buff: xev.WriteBuffer,
+                    r: UDP.WriteError!usize,
+                ) xev.CallbackAction {
+                    _ = r catch unreachable;
+                    const server = user_data.?;
+                    server.allocator.free(buff.slice);
+                    server.completion_pool.destroy(cw);
+                    server.state_pool.destroy(sw);
+                    return .disarm;
+                }
+            }).callback,
+        );
+    }
+
     // Callback for after reading from socket
     fn readCallBack(
         ud: ?*ServerXev,
-        _: *xev.Loop,
-        _: *xev.Completion,
-        _: *xev.UDP.State,
+        loop: *xev.Loop,
+        c: *xev.Completion,
+        s: *xev.UDP.State,
         addr: net.Address,
-        udp: UDP,
+        _: UDP,
         buf: xev.ReadBuffer,
         r: xev.ReadError!usize,
     ) xev.CallbackAction {
-        const recv_len = r catch |err| {
-            log.warn("Read error: {}\n", .{err});
+        const len = r catch |err| {
+            log.err("Read error: {}\n", .{err});
             return .rearm;
         };
-        const user_data = ud.?;
-        var response_buf: [BUFFER_SIZE]u8 = undefined;
-        var query = switch (buf) {
-            xev.ReadBuffer.slice => |slice| slice,
-            xev.ReadBuffer.array => |array| array[0..],
-        };
-        const response: []const u8 = handleDnsQuery(
-            user_data,
-            query[0..recv_len],
-            &response_buf,
-        ) catch |err| {
-            log.warn("Error in HandleQuery: {}", .{err});
-            return .rearm;
-        };
+        if (ud) |user_data| {
+            //const response_buf = user_data.message_pool.create() catch unreachable;
+            //std.mem.copyForwards(u8, response_buf, buf.slice[0..]);
+            user_data.write(loop, addr, c, s, buf.slice[0..len]) catch |err| {
+                log.err("Error in write: {}\n", .{err});
+                return .rearm;
+            };
+        }
 
-        // TODO: I know this is deffinetly not the right way to do things
-        // Im basically just YOLOing a sendto instead of queueing up a write
-        _ = posix.sendto(
-            udp.fd,
-            response,
-            0,
-            &addr.any,
-            addr.getOsSockLen(),
-        ) catch |err| {
-            log.err("Error in sendto: {}", .{err});
-            return xev.CallbackAction.rearm;
-        };
-
-        return xev.CallbackAction.rearm;
+        return xev.CallbackAction.disarm;
     }
 
     fn handleDnsQuery(
         user_data: *ServerXev,
         query: []const u8,
         response: []u8,
-    ) ![]const u8 {
+    ) !usize {
         const header_len = 12;
         if (query.len < header_len) {
             return error.InvalidDNSQuery;
@@ -252,7 +285,7 @@ pub const ServerXev = struct {
                 len = external_len;
             }
         }
-        return response[0..len];
+        return len;
     }
 };
 
