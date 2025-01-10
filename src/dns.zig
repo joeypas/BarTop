@@ -33,19 +33,19 @@ pub const Message = struct {
 
     pub fn deinit(self: *Message) void {
         for (self.questions.items) |*q| {
-            q.deinit();
+            q.*.deinit();
         }
         self.questions.deinit();
         for (self.answers.items) |*r| {
-            r.deinit();
+            r.*.deinit();
         }
         self.answers.deinit();
         for (self.authorities.items) |*r| {
-            r.deinit();
+            r.*.deinit();
         }
         self.authorities.deinit();
         for (self.additionals.items) |*r| {
-            r.deinit();
+            r.*.deinit();
         }
         self.additionals.deinit();
     }
@@ -408,12 +408,10 @@ pub const Question = struct {
     }
 
     pub fn qnameCloneOther(self: *Question, other: Name) !void {
-        self.qname = other;
         for (other.items) |*item| {
             //try self.qname.append(try item.clone());
             const tmp = try self.qname.addOne(self.allocator);
-            tmp.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, item.items.len);
-            try tmp.appendSlice(self.allocator, item.items);
+            tmp.* = try item.clone(self.allocator);
         }
     }
 
@@ -561,7 +559,8 @@ pub const Record = struct {
 
     pub fn nameAppendSlice(self: *Record, slice: []const u8) !void {
         const list = try self.name.addOne(self.allocator);
-        try list.appendSlice(slice);
+        list.* = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
+        try list.appendSlice(self.allocator, slice);
     }
 
     pub fn nameAppendSlice2D(self: *Record, slice: [][]const u8) !void {
@@ -570,7 +569,7 @@ pub const Record = struct {
             // of the slices contained in name to avoid an invalid free,
             // and the easiest way to do this is by copying the slice
             const list = try self.name.addOne(self.allocator);
-            list.* = .{};
+            list.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
             try list.appendSlice(self.allocator, part);
         }
     }
@@ -578,19 +577,18 @@ pub const Record = struct {
     pub fn nameCloneOther(self: *Record, other: Name) !void {
         for (other.items) |*item| {
             const tmp = try self.name.addOne(self.allocator);
-            tmp.* = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
-            try tmp.appendSlice(self.allocator, item.items);
+            tmp.* = try item.clone(self.allocator);
         }
     }
 
-    pub fn rdataAppendSlice(self: *Record, slice: []u8) !void {
+    pub fn rdataAppendSlice(self: *Record, slice: []const u8) !void {
         self.rdata = try ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
         try self.rdata.appendSlice(self.allocator, slice);
         //self.rdata.shrinkAndFree(slice.len);
     }
 
     pub fn rdataCloneOther(self: *Record, other: ArrayListUnmanaged(u8)) !void {
-        self.rdata.deinit();
+        self.rdata.deinit(self.allocator);
         self.rdata = try other.clone(self.allocator);
     }
 
