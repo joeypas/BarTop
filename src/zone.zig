@@ -5,6 +5,7 @@ const Allocator = mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayList;
 const Record = @import("dns.zig").Record;
+const Name = @import("dns.zig").Name;
 
 pub const Context = struct {
     origin: [][]const u8,
@@ -44,7 +45,7 @@ pub const Zone = struct {
     records: ArrayList(Record),
     context: Context,
     state: State,
-    last: ArrayList(ArrayList(u8)),
+    last: Name,
 
     pub fn init(allocator: Allocator, file_name: []const u8) !Zone {
         return .{
@@ -52,7 +53,7 @@ pub const Zone = struct {
             .records = ArrayList(Record).init(allocator),
             .context = undefined,
             .state = .ttl,
-            .last = ArrayList(ArrayList(u8)).init(allocator),
+            .last = try Name.initCapacity(allocator, 0),
             .allocator = allocator,
         };
     }
@@ -67,19 +68,19 @@ pub const Zone = struct {
             item.deinit();
         }
         for (self.last.items) |*item| {
-            item.deinit();
+            item.deinit(self.allocator);
         }
-        self.last.deinit();
+        self.last.deinit(self.allocator);
         self.records.deinit();
     }
 
     pub fn read(self: *Zone) !void {
         var reader = self.file.reader();
 
-        var line_arena = Arena.init(self.allocator);
-        defer line_arena.deinit();
+        //var line_arena = Arena.init(self.allocator);
+        //defer line_arena.deinit();
 
-        var line_maybe: ?[]u8 = try reader.readUntilDelimiterOrEofAlloc(line_arena.allocator(), '\n', 512);
+        var line_maybe: ?[]u8 = try reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 512);
 
         while (line_maybe) |line| {
             const trimmed = mem.trim(u8, line, " \t\n\r");
@@ -109,8 +110,8 @@ pub const Zone = struct {
             } else {
                 const record = try self.records.addOne();
                 record.allocator = self.allocator;
-                record.name = ArrayList(ArrayList(u8)).init(self.allocator);
-                record.rdata = ArrayList(u8).init(self.allocator);
+                record.name = try Name.initCapacity(self.allocator, 0);
+                record.rdata = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
                 try self.handleLine(line, record);
             }
             //_ = line_arena.reset(.free_all);
@@ -122,9 +123,9 @@ pub const Zone = struct {
         }
     }
 
-    fn cloneLast(self: *Zone, other: ArrayList(ArrayList(u8))) !void {
+    fn cloneLast(self: *Zone, other: Name) !void {
         for (other.items) |item| {
-            try self.last.append(try item.clone());
+            try self.last.append(self.allocator, try item.clone(self.allocator));
         }
     }
 
@@ -201,10 +202,10 @@ pub const Zone = struct {
                         break :blk;
                     },
                     .rdata => {
-                        var rdata = ArrayList(u8).init(self.allocator);
-                        defer rdata.deinit();
+                        var rdata = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
+                        defer rdata.deinit(self.allocator);
                         std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
-                        try rdata.appendSlice(trimmed[tokens.index..]);
+                        try rdata.appendSlice(self.allocator, trimmed[tokens.index..]);
                         try record.rdataCloneOther(rdata);
                         _ = tokens.next();
                         self.state = .done;
