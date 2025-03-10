@@ -26,7 +26,7 @@ pub fn getQname(allocator: std.mem.Allocator) ![][]u8 {
         return error.Help;
     } else {
         if (res.positionals.len > 0) {
-            var itr = std.mem.splitAny(u8, res.positionals[0], ".");
+            var itr = std.mem.splitAny(u8, res.positionals[0][0], ".");
             var ret = std.ArrayList([]u8).init(allocator);
             errdefer ret.deinit();
 

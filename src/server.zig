@@ -17,7 +17,7 @@ const level: std.log.Level = switch (@import("builtin").mode) {
     .Debug => .debug,
     else => .info,
 };
-pub const std_options = .{
+pub const std_options = std.Options{
     .log_level = level,
 };
 const log = std.log.scoped(.sever);
@@ -132,7 +132,7 @@ pub const ServerXev = struct {
                 _: *xev.Loop,
                 _: *xev.Completion,
                 _: UDP,
-                r: UDP.CloseError!void,
+                r: xev.CloseError!void,
             ) xev.CallbackAction {
                 _ = r catch unreachable;
                 return .disarm;
@@ -184,7 +184,7 @@ pub const ServerXev = struct {
                     sw: *UDP.State,
                     _: UDP,
                     buff: xev.WriteBuffer,
-                    r: UDP.WriteError!usize,
+                    r: xev.WriteError!usize,
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     const server = user_data.?;

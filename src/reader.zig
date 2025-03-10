@@ -15,8 +15,8 @@ pub fn init(bytes: []const u8) Reader {
 
 pub fn read(self: *Reader, comptime T: type) !T {
     return switch (comptime @typeInfo(T)) {
-        .Int => try self.readInt(T),
-        .Array => |array| {
+        .int => try self.readInt(T),
+        .array => |array| {
             var arr: [array.len]array.child = undefined;
             var index: usize = 0;
             while (index < array.len) : (index += 1) {
@@ -24,7 +24,7 @@ pub fn read(self: *Reader, comptime T: type) !T {
             }
             return arr;
         },
-        .Struct => try self.readStruct(T),
+        .@"struct" => try self.readStruct(T),
         else => @compileError("Unsupported type"),
     };
 }

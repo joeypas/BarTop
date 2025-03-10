@@ -396,7 +396,7 @@ pub const Question = struct {
         try list.appendSlice(self.allocator, slice);
     }
 
-    pub fn qnameAppendSlice2D(self: *Question, slice: [][]const u8) !void {
+    pub fn qnameAppendSlice2D(self: *Question, slice: [][]u8) !void {
         for (slice) |part| {
             // Because of the way that a record is deinitialized, a record must own memory
             // of the slices contained in name to avoid an invalid free,
