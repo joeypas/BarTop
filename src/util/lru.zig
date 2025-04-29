@@ -13,6 +13,7 @@ pub fn CacheEntry(comptime T: type) type {
 }
 
 pub fn LRU(comptime T: type) type {
+    const EntryPool = std.heap.MemoryPoolExtra(CacheEntry(T), .{ .alignment = @alignOf(CacheEntry(T)) });
     return struct {
         const Self = @This();
         capacity: usize,
@@ -20,6 +21,7 @@ pub fn LRU(comptime T: type) type {
         head: ?*CacheEntry(T),
         tail: ?*CacheEntry(T),
         allocator: Allocator,
+        entry_pool: EntryPool,
 
         pub fn init(allocator: Allocator, capacity: usize) Self {
             return .{
@@ -28,14 +30,16 @@ pub fn LRU(comptime T: type) type {
                 .head = null,
                 .tail = null,
                 .allocator = allocator,
+                .entry_pool = EntryPool.initPreheated(allocator, capacity) catch undefined,
             };
         }
 
         pub fn deinit(self: *Self) void {
-            var it = self.map.iterator();
-            while (it.next()) |entry| {
-                self.allocator.destroy(entry.value_ptr.*);
-            }
+            //var it = self.map.iterator();
+            //while (it.next()) |entry| {
+            //    self.allocator.destroy(entry.value_ptr.*);
+            //}
+            self.entry_pool.deinit();
             self.map.deinit();
         }
 
@@ -72,7 +76,7 @@ pub fn LRU(comptime T: type) type {
         pub fn remove(self: *Self, key: u64) void {
             if (self.map.get(key)) |entry| {
                 self.removeEntry(entry);
-                self.allocator.destroy(entry);
+                self.entry_pool.destroy(entry);
             }
             _ = self.map.remove(key);
         }
@@ -95,10 +99,10 @@ pub fn LRU(comptime T: type) type {
                     if (self.tail) |tail_entry| {
                         if (!self.map.remove(tail_entry.key)) return error.Remove;
                         self.removeEntry(tail_entry);
-                        self.allocator.destroy(tail_entry);
+                        self.entry_pool.destroy(tail_entry);
                     }
                 }
-                const new_entry = try self.allocator.create(CacheEntry(T));
+                const new_entry = try self.entry_pool.create();
                 new_entry.* = .{
                     .key = key,
                     .value = value,

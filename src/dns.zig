@@ -62,21 +62,21 @@ pub const Message = struct {
 
         for (0..header.an_count) |_| {
             const answer = try answers.addOne();
-            answer.* = try Record.decode(allocator, &buf_reader);
+            answer.* = try Record.decode(allocator, .answer, &buf_reader);
         }
 
         var authorities = ArrayList(Record).init(allocator);
 
         for (0..header.ns_count) |_| {
             const authority = try authorities.addOne();
-            authority.* = try Record.decode(allocator, &buf_reader);
+            authority.* = try Record.decode(allocator, .authority, &buf_reader);
         }
 
         var additionals = ArrayList(Record).init(allocator);
 
         for (0..header.ar_count) |_| {
             const additional = try additionals.addOne();
-            additional.* = try Record.decode(allocator, &buf_reader);
+            additional.* = try Record.decode(allocator, .additional, &buf_reader);
         }
 
         return Message{
@@ -268,13 +268,27 @@ pub const Name = struct {
         try self.labels.append(array);
     }
 
+    pub fn getLen(self: *Name) u16 {
+        var len: u16 = 0;
+
+        for (self.labels.items) |item| {
+            len += 1;
+            len += @intCast(item.items.len);
+        }
+
+        len += 1;
+
+        return len;
+    }
+
     fn checkPointer(allocator: Allocator, labels: *ArrayList(ArrayList(u8)), buffered_reader: *Reader) !bool {
         if (buffered_reader.end - buffered_reader.start >= 2) {
             const buf = buffered_reader.buf[buffered_reader.start .. buffered_reader.start + 2];
-            const pointer = std.mem.readInt(u16, buf[0..2], .big);
-            if ((pointer & 0xF) == 0xc) {
+            const pointer = buf[0];
+            if (pointer >= 0xC0) {
+                const ptr = std.mem.readInt(u16, buf[0..2], .big);
+                const offset = @as(usize, ptr & 0x3FFF);
                 try buffered_reader.reader().skipBytes(2, .{});
-                const offset = @as(usize, pointer & 0xFFF);
                 var fbs = std.io.fixedBufferStream(buffered_reader.buf[offset..]);
                 var reader = fbs.reader();
                 var size = try reader.readByte();
@@ -341,7 +355,13 @@ pub const Name = struct {
         }
     }
 
-    pub fn print(self: *Name, buf: []u8) ![]u8 {
+    pub fn clone(self: *Name) !Name {
+        var ret = Name.init(self.allocator);
+        try ret.copy(self);
+        return ret;
+    }
+
+    pub fn print(self: *Name, buf: []u8, @"type": ?Type) ![]u8 {
         var fbs = std.io.fixedBufferStream(buf);
         var size: usize = 0;
         var writer = fbs.writer();
@@ -351,6 +371,11 @@ pub const Name = struct {
             try writer.writeByte('.');
             size += 1;
         }
+
+        if (@"type") |t| {
+            size += try writer.write(&@as([2]u8, @bitCast(@intFromEnum(t))));
+        }
+
         return buf[0..size];
     }
 
@@ -427,7 +452,7 @@ pub const Question = struct {
     pub fn decode(allocator: Allocator, buffered_reader: *Reader) !Question {
         return Question{
             .allocator = allocator,
-            .qname = try Name.decode(allocator, buffered_reader),
+            .qname = Name.decode(allocator, buffered_reader) catch unreachable,
             .qtype = @enumFromInt(try buffered_reader.reader().readInt(u16, .big)),
             .qclass = @enumFromInt(try buffered_reader.reader().readInt(u16, .big)),
         };
@@ -444,6 +469,15 @@ pub const Question = struct {
         return len;
     }
 
+    pub fn clone(self: *Question) !Question {
+        return Question{
+            .allocator = self.allocator,
+            .qname = try self.qname.clone(),
+            .qtype = self.qtype,
+            .qclass = self.qclass,
+        };
+    }
+
     pub fn print(self: *Question, buf: []u8) ![]u8 {
         var name_buf: [255]u8 = undefined;
         return std.fmt.bufPrint(
@@ -454,7 +488,7 @@ pub const Question = struct {
             \\  qclass: {any},
             \\],
         ,
-            .{ try self.qname.print(&name_buf), self.qtype, self.qclass },
+            .{ try self.qname.print(&name_buf, null), self.qtype, self.qclass },
         );
     }
 };
@@ -465,7 +499,7 @@ pub const RDataType = enum {
     ptr,
     mx,
     txt,
-    soa,
+    //soa,
     a,
     aaaa,
     data,
@@ -480,15 +514,15 @@ pub const RData = union(RDataType) {
         exchange: Name,
     },
     txt: Name,
-    soa: struct {
-        mname: Name,
-        rname: Name,
-        serial: u32,
-        refresh: u32,
-        retry: u32,
-        expire: u32,
-        minimum: u32,
-    },
+    //soa: struct {
+    //    mname: Name,
+    //    rname: Name,
+    //    serial: u32,
+    //    refresh: u32,
+    //    retry: u32,
+    //    expire: u32,
+    //    minimum: u32,
+    //},
     a: struct {
         addr: std.net.Ip4Address = undefined,
     },
@@ -496,6 +530,22 @@ pub const RData = union(RDataType) {
         addr: std.net.Ip6Address = undefined,
     },
     data: ArrayList(u8),
+
+    pub fn clone(self: *RData) !RData {
+        switch (self.*) {
+            .cname => |*case| return RData{ .cname = try case.clone() },
+            .ns => |*case| return RData{ .ns = try case.clone() },
+            .ptr => |*case| return RData{ .ptr = try case.clone() },
+            .mx => |*case| return RData{ .mx = .{
+                .preface = case.preface,
+                .exchange = try case.exchange.clone(),
+            } },
+            .txt => |*case| return RData{ .txt = try case.clone() },
+            .a => |*case| return RData{ .a = .{ .addr = case.addr } },
+            .aaaa => |*case| return RData{ .aaaa = .{ .addr = case.addr } },
+            .data => |*case| return RData{ .data = try case.clone() },
+        }
+    }
 
     pub fn init(allocator: Allocator, rtype: RDataType) RData {
         return switch (rtype) {
@@ -507,15 +557,15 @@ pub const RData = union(RDataType) {
                 .exchange = Name.init(allocator),
             } },
             .txt => RData{ .txt = Name.init(allocator) },
-            .soa => RData{ .soa = .{
-                .mname = Name.init(allocator),
-                .rname = Name.init(allocator),
-                .serial = 0,
-                .refresh = 0,
-                .retry = 0,
-                .expire = 0,
-                .minimum = 0,
-            } },
+            //.soa => RData{ .soa = .{
+            //    .mname = Name.init(allocator),
+            //    .rname = Name.init(allocator),
+            //    .serial = 0,
+            //    .refresh = 0,
+            //    .retry = 0,
+            //    .expire = 0,
+            //    .minimum = 0,
+            //} },
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
             .data => RData{ .data = ArrayList(u8).init(allocator) },
@@ -529,10 +579,10 @@ pub const RData = union(RDataType) {
             .ptr => |*case| case.deinit(),
             .mx => |*case| case.exchange.deinit(),
             .txt => |*case| case.deinit(),
-            .soa => |*case| {
-                case.mname.deinit();
-                case.rname.deinit();
-            },
+            //.soa => |*case| {
+            //    case.mname.deinit();
+            //    case.rname.deinit();
+            //},
             .data => |*case| case.deinit(),
             else => return,
         }
@@ -549,15 +599,15 @@ pub const RData = union(RDataType) {
                 .exchange = try Name.decode(allocator, buffered_reader),
             } },
             Type.txt => return RData{ .txt = try Name.decode(allocator, buffered_reader) },
-            Type.soa => return RData{ .soa = .{
-                .mname = try Name.decode(allocator, buffered_reader),
-                .rname = try Name.decode(allocator, buffered_reader),
-                .serial = try reader.readInt(u32, .big),
-                .refresh = try reader.readInt(u32, .big),
-                .retry = try reader.readInt(u32, .big),
-                .expire = try reader.readInt(u32, .big),
-                .minimum = try reader.readInt(u32, .big),
-            } },
+            //Type.soa => return RData{ .soa = .{
+            //    .mname = try Name.decode(allocator, buffered_reader),
+            //    .rname = try Name.decode(allocator, buffered_reader),
+            //    .serial = try reader.readInt(u32, .big),
+            //    .refresh = try reader.readInt(u32, .big),
+            //    .retry = try reader.readInt(u32, .big),
+            //    .expire = try reader.readInt(u32, .big),
+            //    .minimum = try reader.readInt(u32, .big),
+            //} },
             Type.a => {
                 var data: [4]u8 = undefined;
                 _ = try reader.read(&data);
@@ -595,37 +645,62 @@ pub const RData = union(RDataType) {
                 return len;
             },
             .txt => |*txt| return txt.encode(writer),
-            .soa => |*soa| {
-                len += try soa.mname.encode(writer);
-                len += try soa.rname.encode(writer);
+            //.soa => |*soa| {
+            //    len += try soa.mname.encode(writer);
+            //    len += try soa.rname.encode(writer);
 
-                try writer.writeInt(u32, soa.serial, .big);
-                len += 4;
+            //    try writer.writeInt(u32, soa.serial, .big);
+            //    len += 4;
 
-                try writer.writeInt(u32, soa.refresh, .big);
-                len += 4;
+            //    try writer.writeInt(u32, soa.refresh, .big);
+            //    len += 4;
 
-                try writer.writeInt(u32, soa.retry, .big);
-                len += 4;
+            //    try writer.writeInt(u32, soa.retry, .big);
+            //    len += 4;
 
-                try writer.writeInt(u32, soa.expire, .big);
-                len += 4;
+            //    try writer.writeInt(u32, soa.expire, .big);
+            //    len += 4;
 
-                try writer.writeInt(u32, soa.minimum, .big);
-                len += 4;
-                return len;
-            },
+            //    try writer.writeInt(u32, soa.minimum, .big);
+            //    len += 4;
+            //    return len;
+            //},
             .a => |*a| {
                 const bytes = @as([4]u8, @bitCast(a.addr.sa.addr));
                 return try writer.write(&bytes);
             },
             .aaaa => |*aaaa| {
-                const bytes = @as([16]u8, @bitCast(aaaa.addr.sa.addr));
+                const bytes = aaaa.addr.sa.addr;
                 return try writer.write(&bytes);
             },
             .data => |data| return writer.write(data.items),
         }
     }
+
+    pub fn getLen(self: *RData) u16 {
+        var len: u16 = 0;
+
+        switch (self.*) {
+            .cname => |*case| return case.getLen(),
+            .ns => |*case| return case.getLen(),
+            .ptr => |*case| return case.getLen(),
+            .mx => |*case| {
+                len += 2;
+                len += case.exchange.getLen();
+                return len;
+            },
+            .txt => |*case| return case.getLen(),
+            .a => return 4,
+            .aaaa => return 16,
+            .data => |*case| return @intCast(case.items.len),
+        }
+    }
+};
+
+pub const RType = enum {
+    answer,
+    authority,
+    additional,
 };
 
 pub const Record = struct {
@@ -636,12 +711,14 @@ pub const Record = struct {
     ttl: u32 = 0,
     rdlength: u16 = 4,
     rdata: RData,
+    rtype: RType,
 
-    pub fn init(allocator: Allocator, rtype: RDataType) Record {
+    pub fn init(allocator: Allocator, @"type": RDataType, rtype: RType) Record {
         return Record{
             .allocator = allocator,
             .name = Name.init(allocator),
-            .rdata = RData.init(allocator, rtype),
+            .rdata = RData.init(allocator, @"type"),
+            .rtype = rtype,
         };
     }
 
@@ -650,15 +727,17 @@ pub const Record = struct {
         self.rdata.deinit();
     }
 
-    pub fn decode(allocator: Allocator, buffered_reader: *Reader) !Record {
+    pub fn decode(allocator: Allocator, rtype: RType, buffered_reader: *Reader) !Record {
         var reader = buffered_reader.reader();
         const name = try Name.decode(allocator, buffered_reader);
         const type_: Type = @enumFromInt(try reader.readInt(u16, .big));
         const class: Class = @enumFromInt(try reader.readInt(u16, .big));
         const ttl = try reader.readInt(u32, .big);
-        const rdlength = try reader.readInt(u16, .big);
+        var rdlength = try reader.readInt(u16, .big);
 
-        const rdata = try RData.decode(allocator, type_, @intCast(rdlength), buffered_reader);
+        var rdata = try RData.decode(allocator, type_, @intCast(rdlength), buffered_reader);
+
+        rdlength = rdata.getLen();
 
         return Record{
             .allocator = allocator,
@@ -668,6 +747,7 @@ pub const Record = struct {
             .ttl = ttl,
             .rdlength = rdlength,
             .rdata = rdata,
+            .rtype = rtype,
         };
     }
 
@@ -701,8 +781,21 @@ pub const Record = struct {
             \\  rdata: {any},
             \\],
         ,
-            .{ try self.name.print(&name_buf), self.type, self.class, self.ttl, self.rdlength, self.rdata },
+            .{ try self.name.print(&name_buf, null), self.type, self.class, self.ttl, self.rdlength, self.rdata },
         );
+    }
+
+    pub fn clone(self: *Record) !Record {
+        return Record{
+            .allocator = self.allocator,
+            .name = try self.name.clone(),
+            .type = self.type,
+            .class = self.class,
+            .ttl = self.ttl,
+            .rdlength = self.rdlength,
+            .rdata = try self.rdata.clone(),
+            .rtype = self.rtype,
+        };
     }
 };
 

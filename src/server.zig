@@ -23,7 +23,7 @@ pub const std_options = std.Options{
 const log = std.log.scoped(.sever);
 
 // Constants
-pub const BUFFER_SIZE = 512;
+pub const BUFFER_SIZE = 4096;
 const READ_TIMEOUT_MS = 6000;
 
 // Global vars (for thread sync)
@@ -44,7 +44,6 @@ pub const StubResolver = struct {
     options: Options,
     allocator: Allocator,
     dns_cache: LRU(dns.Message),
-    dns_store: AutoHashMap(u64, []u8),
     bind_addr: net.Address,
     resolv: []const u8,
     udp: UDP,
@@ -54,6 +53,7 @@ pub const StubResolver = struct {
     c_timer: xev.Completion = undefined,
     completion_pool: CompletionPool,
     state_pool: StatePool,
+    arena: std.heap.ArenaAllocator,
 
     pub fn init(allocator: Allocator, comptime options: Options) !StubResolver {
         const addr = try net.Address.parseIp(options.bind_addr, options.bind_port);
@@ -63,21 +63,20 @@ pub const StubResolver = struct {
         );
         errdefer allocator.free(resolv);
 
-        var dns_store = AutoHashMap(u64, []u8).init(allocator);
-        errdefer dns_store.deinit();
+        //var dns_store = AutoHashMap(u64, []u8).init(allocator);
+        //errdefer dns_store.deinit();
 
         // TODO: Populate store with a zone definition
         // This is just a placeholder for testing
-        const put = "example.com.";
-        var ip_heap = try allocator.alloc(u8, 4);
-        errdefer allocator.free(ip_heap);
-        @memcpy(ip_heap, &[_]u8{ 192, 168, 1, 1 });
-        try dns_store.put(hashFn(put), ip_heap[0..]);
+        //const put = "example.com.";
+        //var ip_heap = try allocator.alloc(u8, 4);
+        //errdefer allocator.free(ip_heap);
+        //@memcpy(ip_heap, &[_]u8{ 192, 168, 1, 1 });
+        //try dns_store.put(hashFn(put), ip_heap[0..]);
 
         return .{
             .allocator = allocator,
             .dns_cache = LRU(dns.Message).init(allocator, 100),
-            .dns_store = dns_store,
             .bind_addr = addr,
             .options = options,
             .resolv = resolv,
@@ -85,23 +84,16 @@ pub const StubResolver = struct {
             .timer = try xev.Timer.init(),
             .completion_pool = CompletionPool.init(allocator),
             .state_pool = StatePool.init(allocator),
+            .arena = std.heap.ArenaAllocator.init(allocator),
         };
     }
 
     pub fn deinit(self: *StubResolver) void {
-        var cache_itr = self.dns_cache.map.iterator();
-        var store_itr = self.dns_store.iterator();
-        while (cache_itr.next()) |item| {
-            item.value_ptr.*.value.deinit();
-        }
-        while (store_itr.next()) |item| {
-            self.allocator.free(item.value_ptr.*);
-        }
+        self.arena.deinit();
         self.allocator.free(self.resolv);
         self.completion_pool.deinit();
         self.state_pool.deinit();
         self.dns_cache.deinit();
-        self.dns_store.deinit();
     }
 
     pub fn handle(self: *StubResolver) void {
@@ -198,14 +190,15 @@ pub const StubResolver = struct {
     }
 
     pub fn write(self: *StubResolver, loop: *xev.Loop, addr: net.Address, c: *xev.Completion, s: *UDP.State, buf: []u8) !void {
-        var response_buf = try self.allocator.alloc(u8, 512);
+        var allocator = self.arena.allocator();
+        var response_buf = try allocator.alloc(u8, BUFFER_SIZE);
         const len = try handleDnsQuery(
             self,
             buf[0..],
             response_buf,
         );
 
-        response_buf = try self.allocator.realloc(response_buf, len);
+        response_buf = try allocator.realloc(response_buf, len);
 
         //defer self.message_pool.destroy(buf);
 
@@ -229,7 +222,7 @@ pub const StubResolver = struct {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     const server = user_data.?;
-                    server.allocator.free(buff.slice);
+                    server.arena.allocator().free(buff.slice);
                     server.completion_pool.destroy(cw);
                     server.state_pool.destroy(sw);
                     return .disarm;
@@ -270,6 +263,7 @@ pub const StubResolver = struct {
         query: []const u8,
         response: []u8,
     ) !usize {
+        const allocator = user_data.arena.allocator();
         const header_len = 12;
         if (query.len < header_len) {
             return error.InvalidDNSQuery;
@@ -280,39 +274,40 @@ pub const StubResolver = struct {
         var fbr = std.io.fixedBufferStream(query);
         var fbw = std.io.fixedBufferStream(response);
 
-        var packet = try dns.Message.decode(user_data.allocator, fbr.reader().any());
-        var response_packet = dns.Message.init(user_data.allocator);
+        var packet = try dns.Message.decode(allocator, fbr.reader().any());
+        var response_packet = dns.Message.init(allocator);
         defer response_packet.deinit();
         defer packet.deinit();
-        createDnsResponse(&response_packet, packet);
+        try createDnsResponse(&response_packet, &packet);
 
         log.debug("Received DNS Packet: {any}", .{packet.header});
 
         for (packet.questions.items) |*question| {
             var qname_buf: [BUFFER_SIZE]u8 = undefined;
-            const qname = try question.qname.print(&qname_buf);
+            const qname = try question.qname.print(&qname_buf, question.qtype);
             //std.debug.print("Qname: {s}\n", .{qname});
             const qname_hash = hashFn(qname);
 
             if (user_data.dns_cache.get(qname_hash)) |*cached_response| {
                 // TODO: this only works if there is one question
-                var non_const_response = cached_response.*;
 
+                var non_const_response = cached_response.*;
                 // Return cached response
                 log.debug("Cache hit for {s}", .{qname});
                 non_const_response.header.id = packet.header.id;
 
-                const message = try non_const_response.allocPrint(user_data.allocator);
-                defer user_data.allocator.free(message);
+                for (non_const_response.answers.items) |*record| {
+                    try glue(&response_packet, record);
+                }
 
-                log.debug("{s}", .{message});
+                for (non_const_response.authorities.items) |*record| {
+                    try glue(&response_packet, record);
+                }
 
-                len = try non_const_response.encode(fbw.writer().any());
-            } else if (user_data.dns_store.get(qname_hash)) |address| {
-                // Return local response
-                log.debug("Found in local store: {s} -> {any}", .{ qname, address });
+                for (non_const_response.authorities.items) |*record| {
+                    try glue(&response_packet, record);
+                }
 
-                try updateDnsResponse(&response_packet, question, address);
                 len = try response_packet.encode(fbw.writer().any());
             } else {
                 // TODO: This only works if theres one question
@@ -324,16 +319,15 @@ pub const StubResolver = struct {
                     response,
                 );
 
-                var tmp_reader = std.io.fixedBufferStream(response[0..external_len]);
-                var res = try dns.Message.decode(
-                    user_data.allocator,
+                var tmp_reader = std.io.fixedBufferStream(response[0..]);
+                const res = dns.Message.decode(
+                    allocator,
                     tmp_reader.reader().any(),
-                );
+                ) catch |err| {
+                    log.err("in decode", .{});
+                    return err;
+                };
 
-                const message = try res.allocPrint(user_data.allocator);
-                defer user_data.allocator.free(message);
-
-                log.debug("{s}", .{message});
                 try user_data.dns_cache.put(qname_hash, res);
                 len = external_len;
             }
@@ -341,6 +335,26 @@ pub const StubResolver = struct {
         return len;
     }
 };
+
+fn glue(message: *dns.Message, record: *dns.Record) !void {
+    switch (record.rtype) {
+        .answer => {
+            const a = try message.answers.addOne();
+            a.* = try record.clone();
+            message.header.an_count += 1;
+        },
+        .authority => {
+            const a = try message.authorities.addOne();
+            a.* = try record.clone();
+            message.header.ns_count += 1;
+        },
+        .additional => {
+            const a = try message.additionals.addOne();
+            a.* = try record.clone();
+            message.header.ar_count += 1;
+        },
+    }
+}
 
 fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !usize {
     // TODO: Placeholder implementation
@@ -364,7 +378,7 @@ fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !u
         addr.getOsSockLen(),
     );
 
-    var buf: [512]u8 = undefined;
+    var buf: [BUFFER_SIZE]u8 = undefined;
     const recv_bytes = try posix.recvfrom(
         sock,
         buf[0..],
@@ -376,7 +390,7 @@ fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !u
     return recv_bytes;
 }
 
-inline fn createDnsResponse(message: *dns.Message, packet: dns.Message) void {
+inline fn createDnsResponse(message: *dns.Message, packet: *dns.Message) !void {
     message.header = dns.Header{
         .id = packet.header.id,
         .flags = dns.Flags{
@@ -389,10 +403,15 @@ inline fn createDnsResponse(message: *dns.Message, packet: dns.Message) void {
             .response_code = .no_error,
         },
         .qd_count = packet.header.qd_count,
-        .an_count = 1,
+        .an_count = 0,
         .ns_count = 0,
         .ar_count = 0,
     };
+
+    for (packet.questions.items) |*question| {
+        const q = try message.questions.addOne();
+        q.* = try question.clone();
+    }
 }
 
 inline fn updateDnsResponse(message: *dns.Message, question: *dns.Question, address: []u8) !void {
@@ -455,7 +474,8 @@ fn getResolv(allocator: Allocator, external_server: ?[]const u8) ![]const u8 {
         ).? + start_index;
 
         const ret = try allocator.alloc(u8, end_index - start_index);
-        std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
+        //std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
+        std.mem.copyForwards(u8, ret, "8.8.8.8");
         return ret;
     } else {
         const ret = try allocator.alloc(u8, 7);
