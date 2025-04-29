@@ -69,6 +69,14 @@ pub fn LRU(comptime T: type) type {
             self.addToHead(entry);
         }
 
+        pub fn remove(self: *Self, key: u64) void {
+            if (self.map.get(key)) |entry| {
+                self.removeEntry(entry);
+                self.allocator.destroy(entry);
+            }
+            _ = self.map.remove(key);
+        }
+
         pub fn get(self: *Self, key: u64) ?T {
             if (self.map.get(key)) |entry| {
                 self.moveToHead(entry);
