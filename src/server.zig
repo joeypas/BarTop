@@ -12,6 +12,12 @@ const LRU = @import("util/lru.zig").LRU;
 const CompletionPool = std.heap.MemoryPool(xev.Completion);
 const StatePool = std.heap.MemoryPool(UDP.State);
 
+// TODO: For the whole project
+// 1. Implement Timeout/backup server to ask if timeout is too long
+// 2. Validate Messages
+// 3. Return correct errors when we encounter one
+// 4. Async reads/writes when querying external server
+
 // Logging setup
 const level: std.log.Level = switch (@import("builtin").mode) {
     .Debug => .debug,
@@ -23,7 +29,7 @@ pub const std_options = std.Options{
 const log = std.log.scoped(.sever);
 
 // Constants
-pub const BUFFER_SIZE = 4096;
+pub const BUFFER_SIZE = 1024;
 const READ_TIMEOUT_MS = 6000;
 
 // Global vars (for thread sync)
@@ -63,20 +69,9 @@ pub const StubResolver = struct {
         );
         errdefer allocator.free(resolv);
 
-        //var dns_store = AutoHashMap(u64, []u8).init(allocator);
-        //errdefer dns_store.deinit();
-
-        // TODO: Populate store with a zone definition
-        // This is just a placeholder for testing
-        //const put = "example.com.";
-        //var ip_heap = try allocator.alloc(u8, 4);
-        //errdefer allocator.free(ip_heap);
-        //@memcpy(ip_heap, &[_]u8{ 192, 168, 1, 1 });
-        //try dns_store.put(hashFn(put), ip_heap[0..]);
-
         return .{
             .allocator = allocator,
-            .dns_cache = LRU(dns.Message).init(allocator, 100),
+            .dns_cache = LRU(dns.Message).init(allocator, 512),
             .bind_addr = addr,
             .options = options,
             .resolv = resolv,
@@ -138,7 +133,19 @@ pub const StubResolver = struct {
         try loop.run(.until_done);
     }
 
-    fn timerCallback(self_: ?*StubResolver, _: *xev.Loop, _: *xev.Completion, result: xev.Timer.RunError!void) xev.CallbackAction {
+    // We need this to run once every second to update ttl values, and remove
+    // stale records
+    //
+    // Is this overkill? probably
+    // I could just store the time the request was recieved
+    // and update ttl/remove stale records when theres a cache hit
+    // but thats also in the hot path so idk
+    fn timerCallback(
+        self_: ?*StubResolver,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        result: xev.Timer.RunError!void,
+    ) xev.CallbackAction {
         var self = self_.?;
         _ = result catch unreachable;
 
@@ -189,7 +196,14 @@ pub const StubResolver = struct {
         );
     }
 
-    pub fn write(self: *StubResolver, loop: *xev.Loop, addr: net.Address, c: *xev.Completion, s: *UDP.State, buf: []u8) !void {
+    pub fn write(
+        self: *StubResolver,
+        loop: *xev.Loop,
+        addr: net.Address,
+        c: *xev.Completion,
+        s: *UDP.State,
+        buf: []u8,
+    ) !void {
         var allocator = self.arena.allocator();
         var response_buf = try allocator.alloc(u8, BUFFER_SIZE);
         const len = try handleDnsQuery(
@@ -199,8 +213,6 @@ pub const StubResolver = struct {
         );
 
         response_buf = try allocator.realloc(response_buf, len);
-
-        //defer self.message_pool.destroy(buf);
 
         self.udp.write(
             loop,
@@ -247,8 +259,6 @@ pub const StubResolver = struct {
             return .rearm;
         };
         if (ud) |user_data| {
-            //const response_buf = user_data.message_pool.create() catch unreachable;
-            //std.mem.copyForwards(u8, response_buf, buf.slice[0..]);
             user_data.write(loop, addr, c, s, buf.slice[0..len]) catch |err| {
                 log.err("Error in write: {}\n", .{err});
                 return .rearm;
@@ -263,19 +273,20 @@ pub const StubResolver = struct {
         query: []const u8,
         response: []u8,
     ) !usize {
+        // TODO: Return error messages when error is encountered
         const allocator = user_data.arena.allocator();
         const header_len = 12;
         if (query.len < header_len) {
             return error.InvalidDNSQuery;
         }
 
-        var len: usize = 0;
-
         var fbr = std.io.fixedBufferStream(query);
         var fbw = std.io.fixedBufferStream(response);
 
         var packet = try dns.Message.decode(allocator, fbr.reader().any());
         var response_packet = dns.Message.init(allocator);
+        // doing alot of copying but we dont want to have to clone allocations
+        response_packet.ref = true;
         defer response_packet.deinit();
         defer packet.deinit();
         try createDnsResponse(&response_packet, &packet);
@@ -284,42 +295,27 @@ pub const StubResolver = struct {
 
         for (packet.questions.items) |*question| {
             var qname_buf: [BUFFER_SIZE]u8 = undefined;
+            // Add the question type so we don't accidentally get a cache entry for
+            // another type of question
             const qname = try question.qname.print(&qname_buf, question.qtype);
             //std.debug.print("Qname: {s}\n", .{qname});
             const qname_hash = hashFn(qname);
 
             if (user_data.dns_cache.get(qname_hash)) |*cached_response| {
-                // TODO: this only works if there is one question
-
-                var non_const_response = cached_response.*;
-                // Return cached response
                 log.debug("Cache hit for {s}", .{qname});
-                non_const_response.header.id = packet.header.id;
 
-                for (non_const_response.answers.items) |*record| {
-                    try glue(&response_packet, record);
-                }
-
-                for (non_const_response.authorities.items) |*record| {
-                    try glue(&response_packet, record);
-                }
-
-                for (non_const_response.authorities.items) |*record| {
-                    try glue(&response_packet, record);
-                }
-
-                len = try response_packet.encode(fbw.writer().any());
+                // Add cached records to our response
+                try glue(&response_packet, cached_response.*);
             } else {
-                // TODO: This only works if theres one question
-                // Query external server
                 log.debug("Not found in local store, querying external server...", .{});
+                var tmp_response: [BUFFER_SIZE]u8 = undefined;
                 const external_len = try queryExternalServer(
                     user_data.resolv,
                     query,
-                    response,
+                    &tmp_response,
                 );
 
-                var tmp_reader = std.io.fixedBufferStream(response[0..]);
+                var tmp_reader = std.io.fixedBufferStream(tmp_response[0..external_len]);
                 const res = dns.Message.decode(
                     allocator,
                     tmp_reader.reader().any(),
@@ -328,32 +324,27 @@ pub const StubResolver = struct {
                     return err;
                 };
 
+                // Add external records to our response
+                try glue(&response_packet, res);
+
                 try user_data.dns_cache.put(qname_hash, res);
-                len = external_len;
             }
         }
-        return len;
+        return response_packet.encode(fbw.writer().any());
     }
 };
 
-fn glue(message: *dns.Message, record: *dns.Record) !void {
-    switch (record.rtype) {
-        .answer => {
-            const a = try message.answers.addOne();
-            a.* = try record.clone();
-            message.header.an_count += 1;
-        },
-        .authority => {
-            const a = try message.authorities.addOne();
-            a.* = try record.clone();
-            message.header.ns_count += 1;
-        },
-        .additional => {
-            const a = try message.additionals.addOne();
-            a.* = try record.clone();
-            message.header.ar_count += 1;
-        },
-    }
+// Copy records from one message to another
+// Update: only copy references
+fn glue(message: *dns.Message, other: dns.Message) !void {
+    try message.answers.appendSlice(other.answers.items);
+    message.header.an_count += other.header.an_count;
+
+    try message.authorities.appendSlice(other.authorities.items);
+    message.header.ns_count += other.header.ns_count;
+
+    try message.additionals.appendSlice(other.additionals.items);
+    message.header.ar_count += other.header.ar_count;
 }
 
 fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !usize {
@@ -408,25 +399,7 @@ inline fn createDnsResponse(message: *dns.Message, packet: *dns.Message) !void {
         .ar_count = 0,
     };
 
-    for (packet.questions.items) |*question| {
-        const q = try message.questions.addOne();
-        q.* = try question.clone();
-    }
-}
-
-inline fn updateDnsResponse(message: *dns.Message, question: *dns.Question, address: []u8) !void {
-    // TODO: Something here is causing more memory to be allocated than we need
-    var q = try message.addQuestion();
-    q.qtype = question.qtype;
-    q.qclass = question.qclass;
-    try q.qname.copy(&question.qname);
-    var ans = try message.addAnswer(.a);
-    try ans.name.copy(&question.qname);
-    ans.rdata.a = .{ .addr = std.net.Ip4Address.init(address[0..4].*, 0) };
-    ans.type = .a;
-    ans.class = .in;
-    ans.ttl = 300;
-    ans.rdlength = @as(u16, @intCast(address.len));
+    try message.questions.appendSlice(packet.questions.items);
 }
 
 inline fn createDnsError(allocator: Allocator, err: dns.Header.ResponseCode) dns.Message {
@@ -474,8 +447,7 @@ fn getResolv(allocator: Allocator, external_server: ?[]const u8) ![]const u8 {
         ).? + start_index;
 
         const ret = try allocator.alloc(u8, end_index - start_index);
-        //std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
-        std.mem.copyForwards(u8, ret, "8.8.8.8");
+        std.mem.copyForwards(u8, ret, resolv_contents[start_index..end_index]);
         return ret;
     } else {
         const ret = try allocator.alloc(u8, 7);
@@ -505,7 +477,10 @@ pub fn main() !void {
 
     var server = try StubResolver.init(
         allocator,
-        .{ .bind_port = 53 },
+        .{
+            .bind_port = 53,
+            .external_server = "8.8.8.8",
+        },
     );
     defer server.deinit();
 
