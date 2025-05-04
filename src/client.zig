@@ -68,7 +68,7 @@ pub fn main() !void {
 
     const question = try packet.addQuestion();
     try question.qname.fromString(qname);
-    question.*.qtype = .a;
+    question.*.qtype = .ns;
     question.*.qclass = .in;
 
     //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
@@ -106,10 +106,8 @@ pub fn main() !void {
             .{std.meta.fieldNames(Dns.Flags)[@intFromEnum(message.header.flags.response_code)]},
         );
     } else {
-        for (message.answers.items) |*ans| {
-            const name = try ans.name.allocPrint(allocator);
-            defer allocator.free(name);
-            std.debug.print("RECIEVED=> {s}: {any}\n", .{ name, ans.rdata });
-        }
+        const decoded = try message.allocPrint(allocator);
+        defer allocator.free(decoded);
+        std.debug.print("RECIEVED=>\n{s}\n", .{decoded});
     }
 }

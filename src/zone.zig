@@ -4,245 +4,375 @@ const fs = std.fs;
 const Allocator = mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayList;
-const Record = @import("dns.zig").Record;
-const Name = @import("dns.zig").Name;
+const Dns = @import("dns.zig");
+const Record = Dns.Record;
+const Name = Dns.Name;
 
-pub const Context = struct {
-    origin: [][]const u8,
-    default_ttl: u32,
-    class: Record.Class,
-};
-
-pub const State = enum {
-    ttl,
-    class,
-    type,
-    rdata,
-    done,
-};
-
-pub fn getType(typ: []const u8) Record.Type {
-    var buf: [6]u8 = undefined;
-    if (std.meta.stringToEnum(Record.Type, std.ascii.lowerString(&buf, typ))) |ret| {
-        return ret;
-    } else {
-        return Record.Type.null;
-    }
-}
-
-pub fn getClass(class: []const u8) Record.Class {
-    var buf: [5]u8 = undefined;
-    if (std.meta.stringToEnum(Record.Class, std.ascii.lowerString(&buf, class))) |ret| {
-        return ret;
-    } else {
-        return Record.Class.in;
-    }
-}
+// TODO: This needs a full rewrite
 
 pub const Zone = struct {
-    file: fs.File,
-    allocator: Allocator,
+    origin: Name,
+    ttl: u32,
+    soa: Record,
     records: ArrayList(Record),
-    context: Context,
-    state: State,
-    last: Name,
+    arena: Arena,
 
-    pub fn init(allocator: Allocator, file_name: []const u8) !Zone {
+    pub fn init(allocator: Allocator) Zone {
+        var arena = Arena.init(allocator);
+        const alloc = arena.allocator();
         return .{
-            .file = try fs.cwd().openFile(file_name, .{}),
-            .records = ArrayList(Record).init(allocator),
-            .context = undefined,
-            .state = .ttl,
-            .last = try Name.initCapacity(allocator, 0),
-            .allocator = allocator,
+            .origin = Name.init(alloc),
+            .ttl = 0,
+            .soa = Record.init(alloc, .soa),
+            .records = ArrayList(Record).init(alloc),
+            .arena = arena,
         };
     }
 
     pub fn deinit(self: *Zone) void {
-        self.file.close();
-        for (self.context.origin) |item| {
-            self.allocator.free(item);
-        }
-        self.allocator.free(self.context.origin);
-        for (self.records.items) |*item| {
-            item.deinit();
-        }
-        for (self.last.items) |*item| {
-            item.deinit(self.allocator);
-        }
-        self.last.deinit(self.allocator);
-        self.records.deinit();
+        self.arena.deinit();
     }
 
-    pub fn read(self: *Zone) !void {
-        var reader = self.file.reader();
+    pub fn parseFile(self: *Zone, path: []const u8) !void {
+        const alloc = self.arena.allocator();
+        var file = try std.fs.cwd().openFile(path, .{});
+        defer file.close();
+        const stat = try file.stat();
 
-        //var line_arena = Arena.init(self.allocator);
-        //defer line_arena.deinit();
+        const contents = try file.readToEndAlloc(alloc, stat.size);
 
-        var line_maybe: ?[]u8 = try reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 512);
+        var state = ParserState{
+            .origin = "",
+            .ttl = 0,
+            .prev_owner = "",
+            .prev_class = "",
+        };
+        var tokenizer = Tokenizer.init(contents);
 
-        while (line_maybe) |line| {
-            const trimmed = mem.trim(u8, line, " \t\n\r");
-            if (trimmed[0] == '$') {
-                var tokens = mem.splitAny(u8, trimmed, " \t");
-                const first = tokens.next() orelse undefined;
-                if (std.mem.eql(u8, first, "$ORIGIN")) {
-                    var names = ArrayList([]u8).init(self.allocator);
-                    defer names.deinit();
-                    var name_split = std.mem.splitAny(
-                        u8,
-                        tokens.next() orelse undefined,
-                        ".",
-                    );
-                    while (name_split.next()) |n| {
-                        try names.append(try self.allocator.alloc(u8, n.len));
-                        std.mem.copyForwards(u8, names.getLast(), n);
-                    }
-                    self.context.origin = try names.toOwnedSlice();
-                } else if (std.mem.eql(u8, first, "$TTL")) {
-                    self.context.default_ttl = try std.fmt.parseInt(
-                        u32,
-                        trimmed[tokens.index.?..],
-                        10,
-                    );
-                }
-            } else {
-                const record = try self.records.addOne();
-                record.allocator = self.allocator;
-                record.name = try Name.initCapacity(self.allocator, 0);
-                record.rdata = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
-                try self.handleLine(line, record);
+        while (tokenizer.next()) |tok| {
+            switch (tok.tag) {
+                .newline => continue,
+                .eof => break,
+                .directive => try self.parseDirective(),
+                else => try self.parseRecord(tok, &state, &tokenizer),
             }
-            //_ = line_arena.reset(.free_all);
-            line_maybe = try reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 512);
-        }
-
-        if (line_maybe) |line| {
-            self.allocator.free(line);
         }
     }
 
-    fn cloneLast(self: *Zone, other: Name) !void {
-        for (other.items) |item| {
-            try self.last.append(self.allocator, try item.clone(self.allocator));
+    fn parseRecord(self: *Zone, first: Token, state: *ParserState, tokenizer: *Tokenizer) !void {
+        const alloc = self.arena.allocator();
+        var prefix = ArrayList(Token).init(alloc);
+        defer prefix.deinit();
+
+        var typ: Dns.Type = undefined;
+        if (!first.isType()) {
+            try prefix.append(first);
+            while (tokenizer.next()) |tok| {
+                if (tok.parseType()) |t| {
+                    typ = t;
+                    break;
+                }
+                try prefix.append(tok);
+            }
         }
-    }
 
-    fn handleLine(self: *Zone, line: []u8, record: *Record) !void {
-        self.state = .ttl;
-        var index: usize = 0;
-        var found_ttl = false;
-        var found_class = false;
+        var owner: ?[]const u8 = null;
+        var ttl: ?u32 = null;
+        var cls: ?Dns.Class = null;
 
-        if (std.ascii.isWhitespace(line[0])) {
-            try record.nameCloneOther(self.last);
-        } else {
-            var tokens = std.mem.tokenize(u8, line, " \t");
-            var name_split = std.mem.splitAny(u8, tokens.next().?, ".");
-            if (name_split.peek()) |first| {
-                if (std.mem.eql(u8, first, "@")) {
-                    try record.*.nameAppendSlice2D(self.context.origin);
+        for (prefix.items) |tok| switch (tok.tag) {
+            .number => {
+                if (ttl == null) {
+                    ttl = try std.fmt.parseInt(u32, tok.text, 10);
                 } else {
-                    while (name_split.next()) |n| {
-                        try record.nameAppendSlice(n);
-                    }
+                    owner = tok.text;
                 }
-            }
-            index += tokens.index;
-            try self.cloneLast(record.name);
-        }
-
-        const trimmed = mem.trim(u8, line[index..], " ");
-        var tokens = std.mem.tokenize(u8, trimmed, " \t");
-
-        while (tokens.peek()) |token| {
-            if (self.state == .done) break;
-            blk: {
-                switch (self.state) {
-                    .ttl => {
-                        if (!std.ascii.isDigit(token[0])) {
-                            if (found_class) {
-                                _ = tokens.next();
-                                self.state = .type;
-                            } else {
-                                self.state = .class;
-                            }
-                            break :blk;
-                        }
-                        found_ttl = true;
-                        record.*.ttl = try std.fmt.parseInt(u32, token, 10);
-                        _ = tokens.next();
-                        if (found_class) {
-                            self.state = .type;
-                            record.*.class = self.context.class;
-                            break :blk;
-                        }
-                        self.state = .class;
-                        break :blk;
-                    },
-                    .class => {
-                        const c = getClass(token);
-                        self.context.class = c;
-                        record.*.class = c;
-                        found_class = true;
-                        if (found_ttl) {
-                            _ = tokens.next();
-                            self.state = .type;
-                            break :blk;
-                        }
-                        record.*.ttl = self.context.default_ttl;
-                        self.state = .ttl;
-                        break :blk;
-                    },
-                    .type => {
-                        record.*.type = getType(token);
-                        self.state = .rdata;
-                        _ = tokens.next();
-                        break :blk;
-                    },
-                    .rdata => {
-                        var rdata = try std.ArrayListUnmanaged(u8).initCapacity(self.allocator, 0);
-                        defer rdata.deinit(self.allocator);
-                        std.debug.print("rdata: {s}\n", .{trimmed[tokens.index..]});
-                        try rdata.appendSlice(self.allocator, trimmed[tokens.index..]);
-                        try record.rdataCloneOther(rdata);
-                        _ = tokens.next();
-                        self.state = .done;
-                    },
-                    else => unreachable,
+            },
+            .identifier => {
+                if (tok.parseClass()) |class| {
+                    cls = class;
+                } else {
+                    owner = tok.text;
                 }
-            }
-        }
+            },
+            .at => owner = state.origin,
+            else => return error.BadToken,
+        };
+
+        if (owner == null) owner = state.prev_owner;
+        if (ttl == null) ttl = state.ttl;
+        if (cls == null) cls = state.prev_class;
+
+        state.prev_class = cls.?;
+        state.prev_owner = owner.?;
+
+        try self.handleRecord(owner.?, ttl.?, cls.?, typ, tokenizer);
     }
 
-    pub fn getRecords(self: *Zone, t: Record.Type, c: Record.Class, allocator: Allocator) ![]Record {
-        var ret = ArrayList(Record).init(allocator);
-        errdefer ret.deinit();
+    fn handleRecord(
+        self: *Zone,
+        owner: []const u8,
+        ttl: u32,
+        class: Dns.Class,
+        @"type": Dns.Type,
+        tokenizer: *Tokenizer,
+    ) !void {
+        const alloc = self.arena.allocator();
+        var record = try self.records.addOne();
+        record.* = Dns.Record.init(alloc, @"type");
+        try record.name.fromString(owner);
+        record.class = class;
+        record.ttl = ttl;
 
-        for (self.records.items) |record| {
-            if (record.type == t and record.class == c) {
-                try ret.append(record);
-            }
+        switch (record.rdata) {
+            inline else => |*case| {
+                if (tokenizer.next()) |tok| {
+                    try case.fromString(tok.text);
+                }
+            },
         }
-        return ret.toOwnedSlice();
     }
 };
 
-test "read" {
-    const allocator = std.testing.allocator;
-    var zone = try Zone.init(allocator, "resource/test.zone");
-    defer zone.deinit();
-    try zone.read();
+const ParserState = struct {
+    origin: []const u8,
+    ttl: u32,
+    prev_owner: []const u8,
+    prev_class: Dns.Class,
+};
 
-    std.debug.print("Size: {d}\n", .{zone.records.items.len});
+pub const TokenTag = enum {
+    newline, // logical end-of-record   (only when parenDepth == 0)
+    eof,
 
-    for (zone.records.items) |*record| {
-        const name = try record.nameToStringAlloc(allocator);
-        defer allocator.free(name);
-        std.debug.print(
-            "Record: ( {s}, {d}, {any}, {any}, {any} )\n",
-            .{ name, record.ttl, record.class, record.type, record.rdata.items },
-        );
+    // single-character symbols
+    at, // '@'
+
+    // atomic values
+    identifier, // owner names, classes, types
+    number, // TTL or numeric owner labels
+    quoted, // content between "…", **unescaped**
+    directive, // $ORIGIN, $TTL, $INCLUDE, $GENERATE
+};
+
+pub const Token = struct {
+    tag: TokenTag,
+    text: []const u8,
+    line: usize,
+    col: usize,
+
+    pub fn isType(self: Token) bool {
+        var buf: [6]u8 = undefined;
+        if (self.text.len > 5) return false;
+        const lower = std.ascii.lowerString(&buf, self.text);
+        if (std.meta.stringToEnum(Dns.Type, lower) != null) return true else return false;
+    }
+
+    pub fn isClass(self: Token) bool {
+        var buf: [2]u8 = undefined;
+        if (self.text.len > 2) return false;
+        const lower = std.ascii.lowerString(&buf, self.text);
+        if (std.meta.stringToEnum(Dns.Class, lower) != null) return true else return false;
+    }
+
+    pub fn parseType(self: Token) ?Dns.Type {
+        var buf: [6]u8 = undefined;
+        if (self.text.len > 5) return null;
+        const lower = std.ascii.lowerString(&buf, self.text);
+        return std.meta.stringToEnum(Dns.Type, lower);
+    }
+
+    pub fn parseClass(self: Token) ?Dns.Class {
+        var buf: [2]u8 = undefined;
+        if (self.text.len > 2) return null;
+        const lower = std.ascii.lowerString(&buf, self.text);
+        return std.meta.stringToEnum(Dns.Class, lower);
+    }
+};
+
+pub const Tokenizer = struct {
+    source: []const u8,
+    pos: usize = 0,
+    line: usize = 0,
+    col: usize = 0,
+    paren_depth: usize = 0,
+    cached: bool = false,
+    cache: Token = undefined,
+
+    pub fn init(src: []const u8) Tokenizer {
+        return .{
+            .source = src,
+        };
+    }
+
+    pub fn next(self: *Tokenizer) ?Token {
+        self.skipWS();
+
+        if (self.atEnd()) return null;
+
+        const c = self.peek();
+
+        if (c == '(') {
+            self.paren_depth += 1;
+            self.advance();
+        }
+        if (c == ')') {
+            if (self.paren_depth == 0) return null;
+            self.paren_depth -= 1;
+            self.advance();
+        }
+
+        // 3. single-char symbols
+        switch (c) {
+            '@' => return self.single(.at),
+            '$' => return self.scanDirective(),
+            '"' => return self.scanQuoted(),
+            else => {
+                if (std.ascii.isDigit(c)) {
+                    return self.scanNumber();
+                } else if (c == '\n') { // only possible when parenDepth==0
+                    self.advance();
+                    const tok = Token{ .tag = .newline, .text = "", .line = self.line, .col = self.col };
+                    self.line += 1;
+                    self.col = 1;
+                    return tok;
+                } else {
+                    return self.scanIdentifier();
+                }
+            },
+        }
+    }
+
+    fn peek(self: *Tokenizer) u8 {
+        return self.source[self.pos];
+    }
+
+    fn advance(self: *Tokenizer) void {
+        self.pos += 1;
+    }
+
+    fn atEnd(self: *Tokenizer) bool {
+        return self.pos >= self.source.len;
+    }
+
+    fn skipWS(self: *Tokenizer) void {
+        while (!self.atEnd()) {
+            const c = self.peek();
+
+            switch (c) {
+                ' ', '\t', '\r' => self.advance(),
+                ';' => { // comment until newline or EOF
+                    while (!self.atEnd() and self.peek() != '\n') self.advance();
+                },
+                '\n' => { // treat as possible newline only *after* later check
+                    if (self.paren_depth == 0) return;
+                    self.advance(); // inside (), becomes whitespace
+                },
+                else => return,
+            }
+        }
+    }
+
+    fn scanQuoted(self: *Tokenizer) Token {
+        const col = self.col;
+        self.col += 1;
+        self.advance(); // skip opening "
+        const start = self.pos;
+
+        while (!self.atEnd()) {
+            const c = self.peek();
+            if (c == '"') {
+                self.advance();
+                break;
+            } else {
+                self.advance();
+            }
+        }
+
+        return Token{
+            .tag = .quoted,
+            .text = self.source[start .. self.pos - 1], // lives in arena
+            .line = self.line,
+            .col = col,
+        };
+    }
+
+    fn single(self: *Tokenizer, tag: TokenTag) Token {
+        const tok = Token{
+            .tag = tag,
+            .text = self.source[self.pos .. self.pos + 1],
+            .line = self.line,
+            .col = self.col,
+        };
+        self.col += 1;
+        self.advance();
+        return tok;
+    }
+
+    fn scanIdentifier(self: *Tokenizer) Token {
+        const col = self.col;
+        const start = self.pos;
+        self.col += 1;
+
+        while (!self.atEnd()) {
+            const c = self.peek();
+            if (std.ascii.isAlphanumeric(c) or c == '-' or c == '_' or c == '.') {
+                self.advance();
+            } else break;
+        }
+
+        return Token{
+            .tag = .identifier,
+            .text = self.source[start..self.pos],
+            .line = self.line,
+            .col = col,
+        };
+    }
+
+    fn scanDirective(self: *Tokenizer) Token {
+        const col = self.col;
+        self.advance();
+        const start = self.pos;
+        self.col += 1;
+
+        while (!self.atEnd()) {
+            const c = self.peek();
+            if (std.ascii.isAlphabetic(c)) self.advance() else break;
+        }
+
+        return Token{
+            .tag = .directive,
+            .text = self.source[start..self.pos],
+            .line = self.line,
+            .col = col,
+        };
+    }
+
+    fn scanNumber(self: *Tokenizer) Token {
+        const start = self.pos;
+        const col = self.col;
+        self.col += 1;
+        while (!self.atEnd() and (std.ascii.isDigit(self.peek()) or self.peek() == '.')) self.advance();
+
+        return Token{
+            .tag = .number,
+            .text = self.source[start..self.pos],
+            .line = self.line,
+            .col = col,
+        };
+    }
+};
+
+pub fn main() !void {
+    const allocator = std.heap.page_allocator;
+    var file = try std.fs.cwd().openFile("resource/test.zone", .{});
+    const stats = try file.stat();
+
+    const contents = try file.readToEndAlloc(allocator, stats.size);
+
+    var tokenizer = Tokenizer.init(contents);
+
+    while (tokenizer.next()) |tok| {
+        std.debug.print("{s}: {any}\n", .{ tok.text, tok.tag });
     }
 }

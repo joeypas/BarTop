@@ -3,7 +3,7 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
 
-const Reader = std.io.BufferedReader(4096, std.io.AnyReader);
+pub const Reader = std.io.BufferedReader(4096, std.io.AnyReader);
 const Writer = std.io.BufferedWriter(4096, std.io.AnyWriter);
 
 pub const Message = struct {
@@ -128,19 +128,19 @@ pub const Message = struct {
         return q;
     }
 
-    pub fn addAnswer(self: *Message, rtype: RDataType) !*Record {
+    pub fn addAnswer(self: *Message, rtype: Type) !*Record {
         const a = try self.answers.addOne();
         a.* = Record.init(self.allocator, rtype);
         return a;
     }
 
-    pub fn addAuthority(self: *Message, rtype: RDataType) !*Record {
+    pub fn addAuthority(self: *Message, rtype: Type) !*Record {
         const a = try self.answers.addOne();
         a.* = Record.init(self.allocator, rtype);
         return a;
     }
 
-    pub fn addAdditional(self: *Message, rtype: RDataType) !*Record {
+    pub fn addAdditional(self: *Message, rtype: Type) !*Record {
         const a = try self.answers.addOne();
         a.* = Record.init(self.allocator, rtype);
         return a;
@@ -399,12 +399,14 @@ pub const Name = struct {
     }
 
     pub fn fromString(self: *Name, name: []const u8) !void {
-        var itr = std.mem.splitScalar(u8, name, '.');
+        var itr = std.mem.splitAny(u8, name, ". ");
 
         while (itr.next()) |part| {
-            var array = try ArrayList(u8).initCapacity(self.allocator, part.len);
+            if (part.len == 0) continue;
+            var array = ArrayList(u8).init(self.allocator);
             errdefer array.deinit();
-            array.appendSliceAssumeCapacity(part);
+            const slice = try array.addManyAsSlice(part.len);
+            @memcpy(slice[0..], part);
             try self.labels.append(array);
         }
     }
@@ -420,15 +422,16 @@ pub const Type = enum(u16) {
     txt = 16,
     aaaa = 28,
     srv = 33,
-    opt = 41,
-    ds = 43,
-    rrsig = 46,
-    nsec = 47,
-    dnskey = 48,
-    ixfr = 251,
-    axfr = 252,
-    any = 255,
-    caa = 257,
+    //opt = 41,
+    //ds = 43,
+    //rrsig = 46,
+    //nsec = 47,
+    //dnskey = 48,
+    //ixfr = 251,
+    //axfr = 252,
+    //any = 255,
+    //caa = 257,
+    data = 65535,
     _,
 };
 
@@ -503,27 +506,102 @@ pub const Question = struct {
     }
 };
 
-pub const RDataType = enum {
-    cname,
-    ns,
-    ptr,
-    mx,
-    txt,
-    soa,
-    a,
-    aaaa,
-    data,
-};
+fn initRData(T: type, comptime tag: Type, allocator: Allocator) RData {
+    var ret: T = undefined;
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                if (std.meta.hasFn(field.type, "init")) {
+                    @field(ret, field.name) = try field.type.init(allocator);
+                } else if (@typeInfo(field.type) == .int) {
+                    @field(ret, field.name) = 0;
+                }
+            }
+            return @unionInit(RData, @tagName(tag), ret);
+        },
+        else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
+    }
+}
 
-pub const RData = union(RDataType) {
-    cname: Name,
-    ns: Name,
-    ptr: Name,
-    mx: struct {
-        preface: u16,
-        exchange: Name,
+fn deinitRData(comptime T: type, data: *T) void {
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                if (std.meta.hasFn(field.type, "deinit")) {
+                    @field(data, field.name).deinit();
+                }
+            }
+        },
+        else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
+    }
+}
+
+fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, buffered_reader: *Reader) !RData {
+    var ret: T = undefined;
+    var reader = buffered_reader.reader();
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                if (std.meta.hasFn(field.type, "decode")) {
+                    @field(ret, field.name) = try field.type.decode(allocator, buffered_reader);
+                } else if (@typeInfo(field.type) == .int) {
+                    @field(ret, field.name) = try reader.readInt(field.type, .big);
+                }
+            }
+            return @unionInit(RData, @tagName(tag), ret);
+        },
+        else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
+    }
+}
+
+fn encodeRData(comptime T: type, data: *T, writer: std.io.AnyWriter) !usize {
+    var len: usize = 0;
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                if (std.meta.hasFn(field.type, "encode")) {
+                    len += try @field(data, field.name).encode(writer);
+                } else if (@typeInfo(field.type) == .int) {
+                    try writer.writeInt(field.type, @field(data, field.name), .big);
+                    len += @typeInfo(field.type).int.bits / 8;
+                }
+            }
+            return len;
+        },
+        else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
+    }
+}
+
+fn getLenRData(comptime T: type, data: *T) u16 {
+    var len: u16 = 0;
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                if (std.meta.hasFn(field.type, "getLen")) {
+                    len += @field(data, field.name).getLen();
+                } else if (@typeInfo(field.type) == .int) {
+                    len += @typeInfo(field.type).int.bits / 8;
+                }
+            }
+            return len;
+        },
+        else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
+    }
+}
+
+pub const RData = union(Type) {
+    // TODO:
+    // 1. Implement printing support
+    // 2. Full rdata type support
+    a: struct {
+        addr: std.net.Ip4Address = undefined,
     },
-    txt: Name,
+    ns: struct {
+        name: Name,
+    },
+    cname: struct {
+        name: Name,
+    },
     soa: struct {
         mname: Name,
         rname: Name,
@@ -533,100 +611,61 @@ pub const RData = union(RDataType) {
         expire: u32,
         minimum: u32,
     },
-    a: struct {
-        addr: std.net.Ip4Address = undefined,
+    ptr: struct {
+        name: Name,
+    },
+    mx: struct {
+        preface: u16,
+        exchange: Name,
+    },
+    txt: struct {
+        name: Name,
     },
     aaaa: struct {
         addr: std.net.Ip6Address = undefined,
     },
+    srv: struct {
+        priority: u16,
+        weight: u16,
+        port: u16,
+        target: Name,
+    },
     data: ArrayList(u8),
 
-    pub fn clone(self: *RData) !RData {
-        switch (self.*) {
-            .cname => |*case| return RData{ .cname = try case.clone() },
-            .ns => |*case| return RData{ .ns = try case.clone() },
-            .ptr => |*case| return RData{ .ptr = try case.clone() },
-            .mx => |*case| return RData{ .mx = .{
-                .preface = case.preface,
-                .exchange = try case.exchange.clone(),
-            } },
-            .txt => |*case| return RData{ .txt = try case.clone() },
-            .soa => |*case| return RData{ .soa = .{
-                .mname = try case.mname.clone(),
-                .rname = try case.rname.clone(),
-                .serial = case.serial,
-                .refresh = case.refresh,
-                .retry = case.retry,
-                .expire = case.expire,
-                .minimum = case.minimum,
-            } },
-            .a => |*case| return RData{ .a = .{ .addr = case.addr } },
-            .aaaa => |*case| return RData{ .aaaa = .{ .addr = case.addr } },
-            .data => |*case| return RData{ .data = try case.clone() },
-        }
-    }
-
-    pub fn init(allocator: Allocator, rtype: RDataType) RData {
+    pub fn init(allocator: Allocator, rtype: Type) RData {
         return switch (rtype) {
-            .cname => RData{ .cname = Name.init(allocator) },
-            .ns => RData{ .ns = Name.init(allocator) },
-            .ptr => RData{ .ptr = Name.init(allocator) },
-            .mx => RData{ .mx = .{
-                .preface = 0,
-                .exchange = Name.init(allocator),
-            } },
-            .txt => RData{ .txt = Name.init(allocator) },
-            .soa => RData{ .soa = .{
-                .mname = Name.init(allocator),
-                .rname = Name.init(allocator),
-                .serial = 0,
-                .refresh = 0,
-                .retry = 0,
-                .expire = 0,
-                .minimum = 0,
-            } },
+            inline .cname,
+            .ns,
+            .ptr,
+            .mx,
+            .txt,
+            .soa,
+            .srv,
+            => |t| return initRData(std.meta.TagPayload(RData, t), t, allocator),
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
-            .data => RData{ .data = ArrayList(u8).init(allocator) },
+            else => RData{ .data = ArrayList(u8).init(allocator) },
         };
     }
 
     pub fn deinit(self: *RData) void {
         switch (self.*) {
-            .cname => |*case| case.deinit(),
-            .ns => |*case| case.deinit(),
-            .ptr => |*case| case.deinit(),
-            .mx => |*case| case.exchange.deinit(),
-            .txt => |*case| case.deinit(),
-            .soa => |*case| {
-                case.mname.deinit();
-                case.rname.deinit();
-            },
             .data => |*case| case.deinit(),
-            else => return,
+            inline else => |*t| deinitRData(@TypeOf(t.*), t),
         }
     }
 
     pub fn decode(allocator: Allocator, @"type": Type, size: usize, buffered_reader: *Reader) !RData {
         var reader = buffered_reader.reader();
         switch (@"type") {
-            Type.cname => return RData{ .cname = try Name.decode(allocator, buffered_reader) },
-            Type.ns => return RData{ .ns = try Name.decode(allocator, buffered_reader) },
-            Type.ptr => return RData{ .ptr = try Name.decode(allocator, buffered_reader) },
-            Type.mx => return RData{ .mx = .{
-                .preface = try reader.readInt(u16, .big),
-                .exchange = try Name.decode(allocator, buffered_reader),
-            } },
-            Type.txt => return RData{ .txt = try Name.decode(allocator, buffered_reader) },
-            Type.soa => return RData{ .soa = .{
-                .mname = try Name.decode(allocator, buffered_reader),
-                .rname = try Name.decode(allocator, buffered_reader),
-                .serial = try reader.readInt(u32, .big),
-                .refresh = try reader.readInt(u32, .big),
-                .retry = try reader.readInt(u32, .big),
-                .expire = try reader.readInt(u32, .big),
-                .minimum = try reader.readInt(u32, .big),
-            } },
+            inline .cname,
+            .ns,
+            .ptr,
+            .mx,
+            .txt,
+            .soa,
+            .srv,
+            => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, buffered_reader),
             Type.a => {
                 var data: [4]u8 = undefined;
                 _ = try reader.read(&data);
@@ -652,38 +691,7 @@ pub const RData = union(RDataType) {
     }
 
     pub fn encode(self: *RData, writer: std.io.AnyWriter) !usize {
-        var len: usize = 0;
         switch (self.*) {
-            .cname => |*cname| return cname.encode(writer),
-            .ns => |*ns| return ns.encode(writer),
-            .ptr => |*ptr| return ptr.encode(writer),
-            .mx => |*mx| {
-                try writer.writeInt(u16, mx.preface, .big);
-                len += 2;
-                len += try mx.exchange.encode(writer);
-                return len;
-            },
-            .txt => |*txt| return txt.encode(writer),
-            .soa => |*soa| {
-                len += try soa.mname.encode(writer);
-                len += try soa.rname.encode(writer);
-
-                try writer.writeInt(u32, soa.serial, .big);
-                len += 4;
-
-                try writer.writeInt(u32, soa.refresh, .big);
-                len += 4;
-
-                try writer.writeInt(u32, soa.retry, .big);
-                len += 4;
-
-                try writer.writeInt(u32, soa.expire, .big);
-                len += 4;
-
-                try writer.writeInt(u32, soa.minimum, .big);
-                len += 4;
-                return len;
-            },
             .a => |*a| {
                 const bytes = @as([4]u8, @bitCast(a.addr.sa.addr));
                 return try writer.write(&bytes);
@@ -693,30 +701,16 @@ pub const RData = union(RDataType) {
                 return try writer.write(&bytes);
             },
             .data => |data| return writer.write(data.items),
+            inline else => |*case| return encodeRData(@TypeOf(case.*), case, writer),
         }
     }
 
     pub fn getLen(self: *RData) u16 {
-        var len: u16 = 0;
-
         switch (self.*) {
-            .cname => |*case| return case.getLen(),
-            .ns => |*case| return case.getLen(),
-            .ptr => |*case| return case.getLen(),
-            .mx => |*case| {
-                len += 2;
-                len += case.exchange.getLen();
-                return len;
-            },
-            .txt => |*case| return case.getLen(),
-            .soa => |*case| {
-                len += case.mname.getLen();
-                len += case.rname.getLen();
-                return len + 20;
-            },
             .a => return 4,
             .aaaa => return 16,
             .data => |*case| return @intCast(case.items.len),
+            inline else => |*case| return getLenRData(@TypeOf(case.*), case),
         }
     }
 };
@@ -737,11 +731,12 @@ pub const Record = struct {
     rdata: RData,
     ref: bool = false,
 
-    pub fn init(allocator: Allocator, @"type": RDataType) Record {
+    pub fn init(allocator: Allocator, @"type": Type) Record {
         return Record{
             .allocator = allocator,
             .name = Name.init(allocator),
             .rdata = RData.init(allocator, @"type"),
+            .type = @"type",
         };
     }
 
