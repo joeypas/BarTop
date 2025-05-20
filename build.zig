@@ -49,8 +49,8 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(docs_step);
 
     list[1] = b.addExecutable(.{
-        .name = "BarTop",
-        .root_source_file = b.path("src/server.zig"),
+        .name = "StubResolver",
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });

@@ -23,13 +23,13 @@ const level: std.log.Level = switch (@import("builtin").mode) {
     .Debug => .debug,
     else => .info,
 };
-pub const std_options = std.Options{
+const std_options = std.Options{
     .log_level = level,
 };
 const log = std.log.scoped(.sever);
 
 // Constants
-pub const BUFFER_SIZE = 1024;
+const BUFFER_SIZE = 1024;
 const READ_TIMEOUT_MS = 6000;
 
 // Global vars (for thread sync)
@@ -92,12 +92,12 @@ pub const StubResolver = struct {
     }
 
     pub fn handle(self: *StubResolver) void {
-        self.run() catch |err| {
+        self.start() catch |err| {
             log.err("Error in server run: {}", .{err});
         };
     }
 
-    pub fn run(self: *StubResolver) !void {
+    pub fn start(self: *StubResolver) !void {
         // Send signal to main thread to show we are done
         defer dns_condition.signal();
 
@@ -468,11 +468,10 @@ fn hashFn(data: []const u8) u64 {
     return hash;
 }
 
-pub fn main() !void {
+pub fn run() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    //const allocator = std.heap.raw_c_allocator;
     const stdin = std.io.getStdIn().reader();
 
     var server = try StubResolver.init(
