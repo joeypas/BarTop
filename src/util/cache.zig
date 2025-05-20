@@ -11,9 +11,11 @@ pub fn CacheEntry(comptime T: type) type {
         next: ?*CacheEntry(T),
     };
 }
+pub fn EntryPool(comptime T: type) type {
+    return std.heap.MemoryPoolExtra(CacheEntry(T), .{ .alignment = @alignOf(CacheEntry(T)) });
+}
 
 pub fn LRU(comptime T: type) type {
-    const EntryPool = std.heap.MemoryPoolExtra(CacheEntry(T), .{ .alignment = @alignOf(CacheEntry(T)) });
     return struct {
         const Self = @This();
         capacity: usize,
@@ -21,7 +23,7 @@ pub fn LRU(comptime T: type) type {
         head: ?*CacheEntry(T),
         tail: ?*CacheEntry(T),
         allocator: Allocator,
-        entry_pool: EntryPool,
+        entry_pool: EntryPool(T),
 
         pub fn init(allocator: Allocator, capacity: usize) Self {
             return .{
@@ -30,7 +32,7 @@ pub fn LRU(comptime T: type) type {
                 .head = null,
                 .tail = null,
                 .allocator = allocator,
-                .entry_pool = EntryPool.initPreheated(allocator, capacity) catch undefined,
+                .entry_pool = EntryPool(T).initPreheated(allocator, capacity) catch undefined,
             };
         }
 

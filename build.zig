@@ -24,25 +24,47 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    var list: [2]*std.Build.Step.Compile = undefined;
+    var list: [3]*std.Build.Step.Compile = undefined;
 
-    list[0] = b.addExecutable(.{
+    const dns = b.addModule("dns", .{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/root.zig"),
+    });
+
+    list[0] = b.addLibrary(.{
+        .name = "libdns",
+        .root_module = dns,
+    });
+
+    const docs_step = b.step("doc", "Emit documentation");
+
+    const docs_install = b.addInstallDirectory(.{
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+        .source_dir = list[0].getEmittedDocs(),
+    });
+
+    docs_step.dependOn(&docs_install.step);
+    b.getInstallStep().dependOn(docs_step);
+
+    list[1] = b.addExecutable(.{
         .name = "BarTop",
         .root_source_file = b.path("src/server.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    list[0].root_module.addImport("xev", xev.module("xev"));
+    list[1].root_module.addImport("xev", xev.module("xev"));
 
-    list[1] = b.addExecutable(.{
+    list[2] = b.addExecutable(.{
         .name = "Client",
         .root_source_file = b.path("src/client.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    list[1].root_module.addImport("clap", clap.module("clap"));
+    list[2].root_module.addImport("clap", clap.module("clap"));
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

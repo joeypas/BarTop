@@ -8,7 +8,7 @@ const Thread = std.Thread;
 const Mutex = std.Thread.Mutex;
 const AtomicValue = std.atomic.Value;
 const AutoHashMap = std.AutoHashMap;
-const LRU = @import("util/lru.zig").LRU;
+const LRU = @import("util/cache.zig").LRU;
 const CompletionPool = std.heap.MemoryPool(xev.Completion);
 const StatePool = std.heap.MemoryPool(UDP.State);
 

@@ -1,3 +1,5 @@
+//! Dns abstractions.
+
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
@@ -13,6 +15,7 @@ pub const Message = struct {
     answers: ArrayList(Record),
     authorities: ArrayList(Record),
     additionals: ArrayList(Record),
+    /// Is this message a refrence to another
     ref: bool = false,
 
     pub fn init(allocator: Allocator) Message {
@@ -207,9 +210,13 @@ pub const Flags = packed struct {
 pub const Header = packed struct {
     id: u16 = 0,
     flags: Flags = .{},
+    /// Question count
     qd_count: u16 = 0,
+    /// Answer count
     an_count: u16 = 0,
+    /// Authority count
     ns_count: u16 = 0,
+    // Additional count
     ar_count: u16 = 0,
 
     pub fn decode(buffered_reader: *Reader) !Header {
@@ -251,6 +258,7 @@ pub const Header = packed struct {
     }
 };
 
+/// Represents a Domain Name
 pub const Name = struct {
     allocator: Allocator,
     labels: ArrayList(ArrayList(u8)),
@@ -398,14 +406,15 @@ pub const Name = struct {
         return ret.toOwnedSlice();
     }
 
+    /// Given a string representation of a Domain Name, split into labels and add to internal list
     pub fn fromString(self: *Name, name: []const u8) !void {
         var itr = std.mem.splitAny(u8, name, ". ");
 
         while (itr.next()) |part| {
             if (part.len == 0) continue;
-            var array = ArrayList(u8).init(self.allocator);
+            var array = try ArrayList(u8).initCapacity(self.allocator, name.len);
             errdefer array.deinit();
-            const slice = try array.addManyAsSlice(part.len);
+            const slice = array.addManyAsSliceAssumeCapacity(part.len);
             @memcpy(slice[0..], part);
             try self.labels.append(array);
         }
@@ -423,10 +432,11 @@ pub const Type = enum(u16) {
     aaaa = 28,
     srv = 33,
     //opt = 41,
-    //ds = 43,
     //rrsig = 46,
     //nsec = 47,
-    //dnskey = 48,
+    dnskey = 48,
+    ds = 43,
+    sig = 24,
     //ixfr = 251,
     //axfr = 252,
     //any = 255,
@@ -512,7 +522,7 @@ fn initRData(T: type, comptime tag: Type, allocator: Allocator) RData {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
                 if (std.meta.hasFn(field.type, "init")) {
-                    @field(ret, field.name) = try field.type.init(allocator);
+                    @field(ret, field.name) = field.type.init(allocator);
                 } else if (@typeInfo(field.type) == .int) {
                     @field(ret, field.name) = 0;
                 }
@@ -536,7 +546,7 @@ fn deinitRData(comptime T: type, data: *T) void {
     }
 }
 
-fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, buffered_reader: *Reader) !RData {
+fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, size: usize, buffered_reader: *Reader) !RData {
     var ret: T = undefined;
     var reader = buffered_reader.reader();
     switch (@typeInfo(T)) {
@@ -546,6 +556,17 @@ fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, buffered_reade
                     @field(ret, field.name) = try field.type.decode(allocator, buffered_reader);
                 } else if (@typeInfo(field.type) == .int) {
                     @field(ret, field.name) = try reader.readInt(field.type, .big);
+                } else if (@typeInfo(field.type) == .@"enum") {
+                    @field(ret, field.name) = @enumFromInt(try reader.readInt(@typeInfo(field.type).@"enum".tag_type, .big));
+                } else if (field.type == ArrayList(u8)) {
+                    var array = try ArrayList(u8).initCapacity(allocator, size);
+
+                    reader.readUntilDelimiterArrayList(&array, 0xaa, size) catch |err| switch (err) {
+                        error.EndOfStream => undefined,
+                        else => return err,
+                    };
+
+                    @field(ret, field.name) = array;
                 }
             }
             return @unionInit(RData, @tagName(tag), ret);
@@ -559,11 +580,16 @@ fn encodeRData(comptime T: type, data: *T, writer: std.io.AnyWriter) !usize {
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
-                if (std.meta.hasFn(field.type, "encode")) {
+                if (field.type == ArrayList(u8)) {
+                    len += try writer.write(@field(data, field.name).items);
+                } else if (std.meta.hasFn(field.type, "encode")) {
                     len += try @field(data, field.name).encode(writer);
                 } else if (@typeInfo(field.type) == .int) {
                     try writer.writeInt(field.type, @field(data, field.name), .big);
                     len += @typeInfo(field.type).int.bits / 8;
+                } else if (@typeInfo(field.type) == .@"enum") {
+                    try writer.writeInt(@typeInfo(field.type).@"enum".tag_type, @intFromEnum(@field(data, field.name)), .big);
+                    len += @typeInfo(@typeInfo(field.type).@"enum".tag_type).int.bits / 8;
                 }
             }
             return len;
@@ -577,7 +603,9 @@ fn getLenRData(comptime T: type, data: *T) u16 {
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
-                if (std.meta.hasFn(field.type, "getLen")) {
+                if (field.type == ArrayList(u8)) {
+                    len += @intCast(@field(data, field.name).items.len);
+                } else if (std.meta.hasFn(field.type, "getLen")) {
                     len += @field(data, field.name).getLen();
                 } else if (@typeInfo(field.type) == .int) {
                     len += @typeInfo(field.type).int.bits / 8;
@@ -588,6 +616,8 @@ fn getLenRData(comptime T: type, data: *T) u16 {
         else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
     }
 }
+
+const DNSSEC = @import("dnssec.zig");
 
 pub const RData = union(Type) {
     // TODO:
@@ -630,6 +660,9 @@ pub const RData = union(Type) {
         port: u16,
         target: Name,
     },
+    dnskey: DNSSEC.DnsKey,
+    ds: DNSSEC.DS,
+    sig: DNSSEC.Sig,
     data: ArrayList(u8),
 
     pub fn init(allocator: Allocator, rtype: Type) RData {
@@ -641,6 +674,9 @@ pub const RData = union(Type) {
             .txt,
             .soa,
             .srv,
+            .dnskey,
+            .ds,
+            .sig,
             => |t| return initRData(std.meta.TagPayload(RData, t), t, allocator),
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
@@ -665,7 +701,9 @@ pub const RData = union(Type) {
             .txt,
             .soa,
             .srv,
-            => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, buffered_reader),
+            .dnskey,
+            .sig,
+            => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, buffered_reader),
             Type.a => {
                 var data: [4]u8 = undefined;
                 _ = try reader.read(&data);
@@ -678,12 +716,41 @@ pub const RData = union(Type) {
                 _ = try reader.read(&data);
                 return RData{ .aaaa = .{ .addr = std.net.Ip6Address.init(data, 0, 0, 0) } };
             },
+            Type.ds => {
+                const key_tag = try reader.readInt(u16, .big);
+                const algorithm: DNSSEC.Algorithm = @enumFromInt(try reader.readByte());
+                const digest_type: DNSSEC.DigestType = @enumFromInt(try reader.readByte());
+                const digest_size: usize = switch (digest_type) {
+                    .sha1 => 20,
+                    .sha256, .gost3411 => 32,
+                    .sha384 => 48,
+                    .sha512 => 64,
+                    .sha224 => 28,
+                    else => return error.UnknownDigestType,
+                };
+
+                var digest = try ArrayList(u8).initCapacity(allocator, digest_size);
+                errdefer digest.deinit();
+
+                reader.readAllArrayList(&digest, digest_size) catch |err| switch (err) {
+                    error.StreamTooLong => undefined,
+                    else => return err,
+                };
+
+                return RData{ .ds = .{
+                    .key_tag = key_tag,
+                    .algorithm = algorithm,
+                    .digest_type = digest_type,
+                    .digest = digest,
+                } };
+            },
             else => {
                 var array = try ArrayList(u8).initCapacity(allocator, size);
                 errdefer array.deinit();
-                const data = array.addManyAsSliceAssumeCapacity(size);
-
-                _ = try reader.read(data);
+                reader.readUntilDelimiterArrayList(&array, 0xaa, size) catch |err| switch (err) {
+                    error.EndOfStream => undefined,
+                    else => return err,
+                };
 
                 return RData{ .data = array };
             },
@@ -714,6 +781,34 @@ pub const RData = union(Type) {
         }
     }
 };
+
+test "rdata" {
+    const alloc = std.testing.allocator;
+    var rdata = RData.init(alloc, .dnskey);
+    defer rdata.deinit();
+
+    try rdata.dnskey.public_key.appendSlice("AQPSKmynfzW4kyBv015MUG2DeIQ3Cbl+BBZH4b/0PY1kxkmvHjcZc8nokfzj31GajIQKY+5CptLr3buXA10hWqTkF7H6RfoRqXQeogmMHfpftf6z Mv1LyBUgia7za6ZEzOJBOztyvhjL742iU/TpPSEDhm2SNKLijfUppn1UaNvv4w==");
+
+    rdata.dnskey.algorithm = .rsasha512;
+    rdata.dnskey.protocol = .dnssec;
+
+    var buf: [1024]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+
+    const len = try rdata.encode(fbs.writer().any());
+
+    std.debug.print("{d}: {x}\n", .{ len, buf[0 .. len + 2] });
+
+    var fbr = std.io.fixedBufferStream(buf[0..len]);
+
+    var reader = std.io.bufferedReader(fbr.reader().any());
+
+    var ret = try RData.decode(alloc, .dnskey, 181, &reader);
+    defer ret.deinit();
+
+    std.debug.print("{any}\n", .{ret});
+    std.debug.print("{s}\n{s}\n", .{ rdata.dnskey.public_key.items, ret.dnskey.public_key.items });
+}
 
 pub const RType = enum {
     answer,
@@ -816,46 +911,3 @@ pub const Record = struct {
         };
     }
 };
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    var message = Message.init(allocator);
-
-    message.header.flags.recursion_desired = true;
-    message.header.flags.recursion_available = true;
-    message.header.qd_count = 1;
-    message.header.ns_count = 1;
-
-    var q = try message.addQuestion();
-    q.qclass = .in;
-    q.qtype = .ns;
-    try q.qname.fromString("www.google.com");
-
-    var a = try message.addAuthority(.ns);
-    try a.name.fromString("google.com");
-
-    a.type = .ns;
-    a.ttl = 30;
-    a.rdlength = 12;
-    try a.rdata.ns.fromString("ns2.google.com");
-
-    std.debug.print("{any}\n", .{message});
-
-    var data: [1232]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&data);
-    const len = try message.encode(fbs.writer().any());
-    std.debug.print("{d}\n {x}\n", .{ len, data[0..len] });
-
-    message.deinit();
-
-    var fbr = std.io.fixedBufferStream(data[0..len]);
-    var ret = try Message.decode(allocator, fbr.reader().any());
-    defer ret.deinit();
-
-    const question = try ret.allocPrint(allocator);
-    defer allocator.free(question);
-
-    std.debug.print("{s}\n", .{question});
-}

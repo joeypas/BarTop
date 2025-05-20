@@ -5,7 +5,8 @@ const rand = std.crypto.random;
 
 pub fn getQname(allocator: std.mem.Allocator) ![]const u8 {
     const params = comptime clap.parseParamsComptime(
-        \\-h, --help             Display this help and exit.
+        \\-h, --help            Display this help and exit.
+        \\-t, --type <str>      Type of query to send
         \\<str>...              Hostname to query.
         \\
     );
@@ -46,7 +47,6 @@ pub fn main() !void {
         error.Help => return,
         else => return err,
     };
-    //defer allocator.free(qname);
 
     packet.header = .{
         .id = rand.int(u16),
@@ -71,8 +71,6 @@ pub fn main() !void {
     question.*.qtype = .ns;
     question.*.qclass = .in;
 
-    //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
-    //const data = [_]u8{ 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01 };
     var data_buf: [512]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&data_buf);
     const data = try packet.encode(fbs.writer().any());
