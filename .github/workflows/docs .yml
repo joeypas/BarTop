@@ -1,0 +1,36 @@
+name: API Reference
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+      - name: Build
+        run: zig build doc
+      - name: Upload
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "zig-out/docs/"
+
+  publish:
+    name: Publish website
+    runs-on: ubuntu-latest
+    needs: generate-docs
+    permissions:
+      # Request sufficient permissions to publish the website.
+      pages: write
+      id-token: write
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
