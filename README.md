@@ -18,6 +18,11 @@ It includes
 > **Status:** personal project, API in flux, not production-ready.
 
 ---
+## API Reference
+
+Automatically generated API Reference for the project can be found at
+https://joeypas.github.io/BarTop. Note that Zig autodoc is in beta; the website
+may be broken or incomplete.
 
 ## Quick start
 
