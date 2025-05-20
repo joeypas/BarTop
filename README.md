@@ -1,5 +1,9 @@
-# BarTop · A minimal DNS library & stub/recursive resolver in Zig
+# BarTop
+A minimal DNS library & stub/recursive resolver
 
+![Zig](https://img.shields.io/badge/Zig-%23F7A41D.svg?style=flat-square&logo=zig&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE-MIT)
+## What is BarTop?
 BarTop is an educational DNS toolkit written in **Zig**.  
 It includes
 
@@ -18,8 +22,6 @@ It includes
 ## Quick start
 
 BarTop targets **Zig 0.14**   
-
-### 2 · Fetch dependencies
 
 ```bash
 git clone https://github.com/joeypas/BarTop.git
