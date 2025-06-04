@@ -180,17 +180,26 @@ pub const Message = struct {
     }
 };
 
+pub const ResponseCode = enum(u4) {
+    no_error,
+    format_error,
+    server_failure,
+    name_error,
+    not_implemented,
+    refused,
+    _,
+};
+
+pub const OpCode = enum(u4) {
+    query,
+    iquery,
+    status,
+    _,
+};
+
 // bitcast to go from struct to int
 pub const Flags = packed struct {
-    response_code: enum(u4) {
-        no_error,
-        format_error,
-        server_failure,
-        name_error,
-        not_implemented,
-        refused,
-        _,
-    } = .no_error,
+    response_code: ResponseCode = .no_error,
     check_disable: bool = false,
     authenticated: bool = false,
     z: u1 = 0,
@@ -198,12 +207,7 @@ pub const Flags = packed struct {
     recursion_desired: bool = false,
     truncated: bool = false,
     authoritative: bool = false,
-    op_code: enum(u4) {
-        query,
-        iquery,
-        status,
-        _,
-    } = .query,
+    op_code: OpCode = .query,
     response: bool = false,
 };
 
@@ -563,6 +567,7 @@ fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, size: usize, b
 
                     reader.readUntilDelimiterArrayList(&array, 0xaa, size) catch |err| switch (err) {
                         error.EndOfStream => undefined,
+                        error.StreamTooLong => undefined,
                         else => return err,
                     };
 
@@ -749,6 +754,7 @@ pub const RData = union(Type) {
                 errdefer array.deinit();
                 reader.readUntilDelimiterArrayList(&array, 0xaa, size) catch |err| switch (err) {
                     error.EndOfStream => undefined,
+                    error.StreamTooLong => undefined,
                     else => return err,
                 };
 

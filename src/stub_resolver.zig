@@ -26,7 +26,7 @@ const level: std.log.Level = switch (@import("builtin").mode) {
 const std_options = std.Options{
     .log_level = level,
 };
-const log = std.log.scoped(.sever);
+const log = std.log.scoped(.server);
 
 // Constants
 const BUFFER_SIZE = 1024;
@@ -402,23 +402,23 @@ inline fn createDnsResponse(message: *dns.Message, packet: *dns.Message) !void {
     try message.questions.appendSlice(packet.questions.items);
 }
 
-inline fn createDnsError(allocator: Allocator, err: dns.Header.ResponseCode) dns.Message {
+inline fn createDnsError(allocator: Allocator, err: dns.ResponseCode) dns.Message {
     var message = dns.Message.init(allocator);
     message.header = dns.Header{
         .id = 0,
-        .flags = dns.Header.Flags{
-            .qr = true,
-            .opcode = dns.Header.Opcode.query,
-            .aa = false,
-            .tc = false,
-            .rd = false,
-            .ra = true,
-            .rcode = err,
+        .flags = dns.Flags{
+            .response = true,
+            .op_code = .query,
+            .authoritative = false,
+            .truncated = false,
+            .recursion_desired = false,
+            .recursion_available = true,
+            .response_code = err,
         },
-        .qcount = 0,
-        .ancount = 0,
-        .nscount = 0,
-        .arcount = 0,
+        .qd_count = 0,
+        .an_count = 0,
+        .ns_count = 0,
+        .ar_count = 0,
     };
     return message;
 }
