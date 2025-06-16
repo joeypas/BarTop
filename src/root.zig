@@ -143,14 +143,19 @@ test "crypto_rsa" {
     var ctx = crypto.Context.init();
     defer ctx.deinit();
 
-    var rsa = crypto.Key.init(ctx, 2048);
+    var rsa = crypto.Key.init(ctx, .ed25519, 2048);
     defer rsa.deinit();
 
     try rsa.gen();
+    try rsa.toFilePem("private.pem");
+
+    var rsa2 = crypto.Key.init(ctx, .ed25519, 2048);
+    defer rsa2.deinit();
+    try rsa2.fromFilePem("private.pem");
 
     const test_msg = "This is a test Message.";
 
-    const sig = try rsa.sign(alloc, test_msg);
+    const sig = try rsa2.sign(alloc, test_msg);
     defer alloc.free(sig);
 
     try std.testing.expect(try rsa.verify(sig, test_msg));
