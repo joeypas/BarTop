@@ -39,24 +39,25 @@ const Digest = enum {
 pub const Key = struct {
     pkey: ?*c.EVP_PKEY,
     ctx: Context,
-    bits: usize,
+    bits: usize = 2048,
     algorithm: dnssec.Algorithm,
     digest: Digest,
+    allocator: Allocator,
 
-    pub fn init(ctx: Context, algorithm: dnssec.Algorithm, bits: usize) Key {
+    pub fn init(allocator: Allocator, ctx: Context, algorithm: dnssec.Algorithm) Key {
         return Key{
             .pkey = null,
             .ctx = ctx,
             .algorithm = algorithm,
-            .bits = bits,
             .digest = switch (algorithm) {
                 .rsamd5 => Digest.md5,
-                .dsa, .rsasha1, .rsasha1nsec3sha1 => Digest.sha1,
+                .rsasha1, .rsasha1nsec3sha1 => Digest.sha1,
                 .ecdsap256sha256, .rsasha256 => Digest.sha256,
                 .ecdsap384sha384 => Digest.sha384,
                 .rsasha512 => Digest.sha512,
                 else => Digest.none,
             },
+            .allocator = allocator,
         };
     }
 
@@ -66,7 +67,6 @@ pub const Key = struct {
 
     pub fn gen(self: *Key) !void {
         switch (self.algorithm) {
-            .dsa => try self.genDSA(),
             .rsasha1, .rsasha1nsec3sha1, .rsasha256, .rsasha512, .rsamd5 => try self.genRSA(),
             .ecdsap256sha256, .ecdsap384sha384 => try self.genEC(),
             .ed25519 => try self.genED(),
@@ -88,21 +88,13 @@ pub const Key = struct {
         defer c.EVP_PKEY_CTX_free(ctx);
         if (ctx == null) return error.CreateContext;
 
-        if (c.EVP_PKEY_paramgen_init(ctx) <= 0 or c.EVP_PKEY_paramgen(ctx, &ret) <= 0) return error.GenerateParams;
+        _ = c.EVP_PKEY_paramgen_init(ctx);
+        _ = c.EVP_PKEY_CTX_set_dsa_paramgen_type(ctx, "fips186_2");
+        _ = c.EVP_PKEY_CTX_set_dsa_paramgen_bits(ctx, 1024);
+        _ = c.EVP_PKEY_CTX_set_dsa_paramgen_q_bits(ctx, 160);
 
+        _ = c.EVP_PKEY_paramgen(ctx, &ret);
         return ret;
-    }
-
-    fn genDSA(self: *Key) !void {
-        var ctx: ?*c.EVP_PKEY_CTX = null;
-        const dsa_params = try self.genDSAParams();
-        defer c.EVP_PKEY_free(dsa_params);
-
-        ctx = c.EVP_PKEY_CTX_new_from_pkey(self.ctx.libctx, dsa_params, propq);
-        defer c.EVP_PKEY_CTX_free(ctx);
-        if (ctx == null) return error.CreateContext;
-
-        if (c.EVP_PKEY_keygen_init(ctx) <= 0 or c.EVP_PKEY_keygen(ctx, &self.pkey) <= 0) return error.GenerateKey;
     }
 
     fn genEC(self: *Key) !void {
@@ -151,38 +143,7 @@ pub const Key = struct {
         if (c.i2d_RSAPrivateKey_bio(bpriv, self.pkey) == 0) return error.WriteKey;
     }
 
-    fn signED(self: *Key, allocator: Allocator, message: []const u8) ![]const u8 {
-        const mctx = c.EVP_MD_CTX_new();
-        defer c.EVP_MD_CTX_free(mctx);
-        if (mctx == null) return error.CreateContext;
-        var sig_len: usize = 0;
-
-        if (c.EVP_DigestSignInit_ex(mctx, null, null, self.ctx.libctx, propq, self.pkey, null) == 0) return error.InitializeContext;
-
-        if (c.EVP_DigestSign(mctx, null, &sig_len, message.ptr, message.len) == 0) return error.GetSigLen;
-
-        const sig = try allocator.alloc(u8, sig_len);
-        errdefer allocator.free(sig);
-
-        if (c.EVP_DigestSign(mctx, sig.ptr, &sig_len, message.ptr, message.len) == 0) return error.Sign;
-
-        return sig;
-    }
-
-    fn verifyED(self: *Key, sig: []const u8, message: []const u8) !bool {
-        const mctx = c.EVP_MD_CTX_new();
-        defer c.EVP_MD_CTX_free(mctx);
-        if (mctx == null) return error.CreateContext;
-
-        if (c.EVP_DigestVerifyInit_ex(mctx, null, null, self.ctx.libctx, propq, self.pkey, null) == 0) return error.InitializeContext;
-
-        if (c.EVP_DigestVerify(mctx, sig.ptr, sig.len, message.ptr, message.len) == 0) return false;
-
-        return true;
-    }
-
     pub fn sign(self: *Key, allocator: Allocator, message: []const u8) ![]const u8 {
-        if (self.algorithm == .ed25519) return self.signED(allocator, message);
         const mctx = c.EVP_MD_CTX_new();
         defer c.EVP_MD_CTX_free(mctx);
         if (mctx == null) return error.CreateContext;
@@ -212,7 +173,6 @@ pub const Key = struct {
     }
 
     pub fn verify(self: *Key, sig: []const u8, message: []const u8) !bool {
-        if (self.algorithm == .ed25519) return self.verifyED(sig, message);
         const mctx = c.EVP_MD_CTX_new();
         defer c.EVP_MD_CTX_free(mctx);
         if (mctx == null) return error.CreateContext;
@@ -233,5 +193,157 @@ pub const Key = struct {
         if (c.EVP_DigestVerifyFinal(mctx, sig.ptr, sig.len) == 0) return false;
 
         return true;
+    }
+
+    pub fn buildDnskeyBase64(self: *Key, allocator: Allocator) ![]const u8 {
+        const enc = std.base64.standard.Encoder;
+
+        const key = try self.buildDnskey(allocator);
+        defer allocator.free(key);
+
+        var buf = try allocator.alloc(u8, enc.calcSize(key.len));
+        return enc.encode(buf[0..], key);
+    }
+
+    pub fn buildDnskey(self: *Key, allocator: Allocator) ![]const u8 {
+        return switch (c.EVP_PKEY_id(self.pkey)) {
+            c.EVP_PKEY_RSA => self.buildRSADnskey(allocator),
+            c.EVP_PKEY_EC => self.buildECDSADnskey(allocator),
+            c.EVP_PKEY_ED25519 => self.buildEDDnskey(allocator),
+            c.EVP_PKEY_DSA => self.buildDSADnskey(allocator),
+            else => error.InvalidKeyType,
+        };
+    }
+
+    pub fn fromBase64(self: *Key, buf: []const u8) !void {
+        const dec = std.base64.standard.Decoder;
+        const len = try dec.calcSizeForSlice(buf);
+        var buf_d = try self.allocator.alloc(u8, len);
+        defer self.allocator.free(buf_d);
+        try dec.decode(buf_d[0..], buf);
+
+        return self.fromRaw(buf_d);
+    }
+
+    pub fn fromRaw(self: *Key, buf: []const u8) !void {
+        return switch (c.EVP_PKEY_id(self.pkey)) {
+            c.EVP_PKEY_RSA => self.fromRawRSA(buf),
+            c.EVP_PKEY_EC => self.fromRawECDSA(buf),
+            c.EVP_PKEY_ED25519 => self.fromRawED(buf),
+            else => error.InvalidKeyType,
+        };
+    }
+
+    fn buildRSADnskey(self: *Key, allocator: Allocator) ![]const u8 {
+        const n = try self.getBn(allocator, c.OSSL_PKEY_PARAM_RSA_N);
+        defer allocator.free(n);
+        const e = try self.getBn(allocator, c.OSSL_PKEY_PARAM_RSA_E);
+        defer allocator.free(e);
+
+        const size: usize = if (e.len < 256) 1 else 3;
+        var buf = try allocator.alloc(u8, e.len + n.len + size);
+        var pos: usize = 0;
+        if (e.len < 256) {
+            buf[pos] = @intCast(e.len);
+            pos += 1;
+        } else {
+            buf[pos] = 0;
+            pos += 1;
+            buf[pos] = @intCast(e.len >> 8);
+            pos += 1;
+            buf[pos] = @intCast(e.len);
+            pos += 1;
+        }
+
+        @memcpy(buf[pos .. pos + e.len], e);
+        pos += e.len;
+        @memcpy(buf[pos..], n);
+
+        return buf;
+    }
+
+    fn buildEDDnskey(self: *Key, allocator: Allocator) ![]const u8 {
+        return self.getOct(allocator, c.OSSL_PKEY_PARAM_PUB_KEY);
+    }
+
+    fn buildECDSADnskey(self: *Key, allocator: Allocator) ![]const u8 {
+        const sec = try self.getOct(allocator, c.OSSL_PKEY_PARAM_PUB_KEY);
+        defer allocator.free(sec);
+        return allocator.dupe(u8, sec[1..]);
+    }
+
+    fn fromRawRSA(self: *Key, buf: []const u8) !void {
+        var e_len: usize = 0;
+        var pos: usize = 0;
+        e_len = if (buf[0] == 0x00) (@as(usize, @intCast(buf[1])) << 8) | buf[2] else @intCast(buf[0]);
+        pos = if (buf[0] == 0x00) 3 else 1;
+
+        const rsa_params = [_]c.OSSL_PARAM{
+            c.OSSL_PARAM_BN(c.OSSL_PKEY_PARAM_RSA_N, buf[pos + e_len ..].ptr, buf.len - pos - e_len),
+            c.OSSL_PARAM_BN(c.OSSL_PKEY_PARAM_RSA_E, buf[pos..].ptr, e_len),
+            c.OSSL_PARAM_END,
+        };
+
+        try self.fromParams(rsa_params, "RSA");
+    }
+
+    fn fromRawECDSA(self: *Key, buf: []const u8) !void {
+        const group = switch (self.algorithm) {
+            .ecdsap256sha256 => "P-256",
+            .ecdsap384sha384 => "P-384",
+        };
+
+        var sec = try self.allocator.alloc(u8, buf.len + 1);
+        defer self.allocator.free(sec);
+        sec[0] = 0x04;
+        @memcpy(sec[1..], buf);
+
+        const ec_params = [_]c.OSSL_PARAM{
+            c.OSSL_PARAM_utf8_string(c.OSSL_PKEY_PARAM_GROUP_NAME, group, 0),
+            c.OSSL_PARAM_octet_string(c.OSSL_PKEY_PARAM_PUB_KEY, sec.ptr, sec.len),
+            c.OSSL_PARAM_END,
+        };
+
+        try self.fromParams(ec_params, "EC");
+    }
+
+    fn fromRawED(self: *Key, buf: []const u8) !void {
+        const ed_params = [_]c.OSSL_PARAM{
+            c.OSSL_PARAM_octet_string(c.OSSL_PKEY_PARAM_PUB_KEY, buf.ptr, buf.len),
+            c.OSSL_PARAM_END,
+        };
+
+        try self.fromParams(ed_params, "ED25519");
+    }
+
+    fn fromParams(self: *Key, params: []c.OSSL_PARAM, key_type: []const u8) !void {
+        const ctx: ?*c.EVP_PKEY_CTX = c.EVP_PKEY_CTX_new_from_name(self.ctx.libctx, key_type.ptr, propq);
+        defer c.EVP_PKEY_CTX_free(ctx);
+        if (ctx == null) return error.CreateContext;
+
+        if (c.EVP_PKEY_fromdata_init(ctx) <= 0) return error.FromDataInit;
+        if (c.EVP_PKEY_fromdata(ctx, &self.pkey, c.EVP_PKEY_PUBLIC_KEY, params.ptr) <= 0) return error.FromData;
+    }
+
+    fn getBn(self: *Key, allocator: Allocator, name: []const u8) ![]u8 {
+        var bn: ?*c.BIGNUM = null;
+        defer c.BN_free(bn);
+
+        if (c.EVP_PKEY_get_bn_param(self.pkey, name.ptr, &bn) <= 0) return error.GetParam;
+        const out = try allocator.alloc(u8, @intCast(c.BN_num_bytes(bn)));
+        _ = c.BN_bn2bin(bn, out.ptr);
+
+        return out;
+    }
+
+    fn getOct(self: *Key, allocator: Allocator, name: []const u8) ![]u8 {
+        var len: usize = 0;
+        if (c.EVP_PKEY_get_octet_string_param(self.pkey, name.ptr, null, 0, &len) <= 0) return error.GetParam;
+
+        const buf = try allocator.alloc(u8, len);
+        errdefer allocator.free(buf);
+        if (c.EVP_PKEY_get_octet_string_param(self.pkey, name.ptr, buf.ptr, len, &len) <= 0) return error.GetParam;
+
+        return buf;
     }
 };

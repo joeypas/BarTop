@@ -138,25 +138,43 @@ test "message encode/decode" {
     try std.testing.expectEqual(a.ttl, da.ttl);
 }
 
-test "crypto_rsa" {
+test "crypto_gen/sign" {
     const alloc = std.testing.allocator;
     var ctx = crypto.Context.init();
     defer ctx.deinit();
 
-    var rsa = crypto.Key.init(ctx, .ed25519, 2048);
-    defer rsa.deinit();
+    var key = crypto.Key.init(alloc, ctx, .ed25519);
+    defer key.deinit();
 
-    try rsa.gen();
-    try rsa.toFilePem("private.pem");
+    try key.gen();
+    try key.toFilePem("private.pem");
 
-    var rsa2 = crypto.Key.init(ctx, .ed25519, 2048);
-    defer rsa2.deinit();
-    try rsa2.fromFilePem("private.pem");
+    var key2 = crypto.Key.init(alloc, ctx, .ed25519);
+    defer key2.deinit();
+    try key2.fromFilePem("private.pem");
 
     const test_msg = "This is a test Message.";
 
-    const sig = try rsa2.sign(alloc, test_msg);
+    const sig = try key2.sign(alloc, test_msg);
     defer alloc.free(sig);
 
-    try std.testing.expect(try rsa.verify(sig, test_msg));
+    try std.testing.expect(try key.verify(sig, test_msg));
 }
+
+test "crypto pubkey" {
+    const alloc = std.testing.allocator;
+    var ctx = crypto.Context.init();
+    defer ctx.deinit();
+
+    var key = crypto.Key.init(alloc, ctx, .dsa);
+    defer key.deinit();
+
+    try key.gen();
+
+    const pubkey = try key.buildDnskeyBase64(alloc);
+    defer alloc.free(pubkey);
+
+    std.debug.print("len: {d}\nkey: {s}\n", .{ pubkey.len, pubkey });
+}
+
+const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;
