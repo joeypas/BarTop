@@ -144,15 +144,15 @@ test "crypto_gen/sign" {
     var ctx = crypto.Context.init();
     defer ctx.deinit();
 
-    var key = crypto.Key.init(alloc, ctx, .ed25519);
+    var key = crypto.Key.init(alloc, ctx, .ecdsap384sha384);
     defer key.deinit();
 
     try key.gen();
-    try key.toFilePem("private.pem");
+    try key.toFileDer("private.der");
 
-    var key2 = crypto.Key.init(alloc, ctx, .ed25519);
+    var key2 = crypto.Key.init(alloc, ctx, .ecdsap384sha384);
     defer key2.deinit();
-    try key2.fromFilePem("private.pem");
+    try key2.fromFileDer("private.der");
 
     const test_msg = "This is a test Message.";
 
@@ -167,7 +167,7 @@ test "crypto pubkey" {
     var ctx = crypto.Context.init();
     defer ctx.deinit();
 
-    var key = crypto.Key.init(alloc, ctx, .dsa);
+    var key = crypto.Key.init(alloc, ctx, .ed448);
     defer key.deinit();
 
     try key.gen();
@@ -177,5 +177,3 @@ test "crypto pubkey" {
 
     std.debug.print("len: {d}\nkey: {s}\n", .{ pubkey.len, pubkey });
 }
-
-const EcdsaP256Sha256 = std.crypto.sign.ecdsa.EcdsaP256Sha256;

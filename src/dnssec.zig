@@ -12,6 +12,7 @@ pub const Algorithm = enum(u8) {
     ecdsap256sha256 = 13, // ECDSA Curve P-256 with SHA-256 [RFC6605]
     ecdsap384sha384 = 14, // ECDSA Curve P-384 with SHA-384 [RFC6605]
     ed25519 = 15, // Ed25519 [RFC8080]
+    ed448 = 16, // Ed25519 [RFC8080]
     unknown = 255, // Reserved for Private Use
 };
 

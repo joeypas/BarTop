@@ -69,7 +69,7 @@ pub const Key = struct {
         switch (self.algorithm) {
             .rsasha1, .rsasha1nsec3sha1, .rsasha256, .rsasha512, .rsamd5 => try self.genRSA(),
             .ecdsap256sha256, .ecdsap384sha384 => try self.genEC(),
-            .ed25519 => try self.genED(),
+            .ed25519, .ed448 => try self.genED(),
             else => return error.NotImplemented,
         }
     }
@@ -80,33 +80,23 @@ pub const Key = struct {
         if (self.pkey == null) return error.GenerateKey;
     }
 
-    fn genDSAParams(self: *Key) !?*c.EVP_PKEY {
-        var ret: ?*c.EVP_PKEY = null;
-        var ctx: ?*c.EVP_PKEY_CTX = null;
-
-        ctx = c.EVP_PKEY_CTX_new_from_name(self.ctx.libctx, "DSA", propq);
-        defer c.EVP_PKEY_CTX_free(ctx);
-        if (ctx == null) return error.CreateContext;
-
-        _ = c.EVP_PKEY_paramgen_init(ctx);
-        _ = c.EVP_PKEY_CTX_set_dsa_paramgen_type(ctx, "fips186_2");
-        _ = c.EVP_PKEY_CTX_set_dsa_paramgen_bits(ctx, 1024);
-        _ = c.EVP_PKEY_CTX_set_dsa_paramgen_q_bits(ctx, 160);
-
-        _ = c.EVP_PKEY_paramgen(ctx, &ret);
-        return ret;
-    }
-
     fn genEC(self: *Key) !void {
-        self.pkey = switch (self.algorithm) {
-            .ecdsap256sha256 => c.EVP_PKEY_Q_keygen(self.ctx.libctx, propq, "EC", "P-256"),
-            .ecdsap384sha384 => c.EVP_PKEY_Q_keygen(self.ctx.libctx, propq, "EC", "P-384"),
+        const group = switch (self.algorithm) {
+            .ecdsap256sha256 => "P-256",
+            .ecdsap384sha384 => "P-384",
             else => unreachable,
         };
+
+        self.pkey = c.EVP_PKEY_Q_keygen(self.ctx.libctx, propq, "EC", group);
     }
 
     fn genED(self: *Key) !void {
-        self.pkey = c.EVP_PKEY_Q_keygen(self.ctx.libctx, propq, "ED25519");
+        const typ = switch (self.algorithm) {
+            .ed25519 => "ED25519",
+            .ed448 => "ED448",
+            else => unreachable,
+        };
+        self.pkey = c.EVP_PKEY_Q_keygen(self.ctx.libctx, propq, typ);
 
         if (self.pkey == null) return error.GenerateKey;
     }
@@ -140,10 +130,41 @@ pub const Key = struct {
         const bpriv = c.BIO_new_file(key_path.ptr, "w+");
         defer c.BIO_free_all(bpriv);
 
-        if (c.i2d_RSAPrivateKey_bio(bpriv, self.pkey) == 0) return error.WriteKey;
+        if (c.i2d_PrivateKey_bio(bpriv, self.pkey) == 0) return error.WriteKey;
+    }
+
+    fn signED(self: *Key, allocator: Allocator, message: []const u8) ![]const u8 {
+        const mctx = c.EVP_MD_CTX_new();
+        defer c.EVP_MD_CTX_free(mctx);
+        if (mctx == null) return error.CreateContext;
+        var sig_len: usize = 0;
+
+        if (c.EVP_DigestSignInit_ex(mctx, null, null, self.ctx.libctx, propq, self.pkey, null) == 0) return error.InitializeContext;
+
+        if (c.EVP_DigestSign(mctx, null, &sig_len, message.ptr, message.len) == 0) return error.GetSigLen;
+
+        const sig = try allocator.alloc(u8, sig_len);
+        errdefer allocator.free(sig);
+
+        if (c.EVP_DigestSign(mctx, sig.ptr, &sig_len, message.ptr, message.len) == 0) return error.Sign;
+
+        return sig;
+    }
+
+    fn verifyED(self: *Key, sig: []const u8, message: []const u8) !bool {
+        const mctx = c.EVP_MD_CTX_new();
+        defer c.EVP_MD_CTX_free(mctx);
+        if (mctx == null) return error.CreateContext;
+
+        if (c.EVP_DigestVerifyInit_ex(mctx, null, null, self.ctx.libctx, propq, self.pkey, null) == 0) return error.InitializeContext;
+
+        if (c.EVP_DigestVerify(mctx, sig.ptr, sig.len, message.ptr, message.len) == 0) return false;
+
+        return true;
     }
 
     pub fn sign(self: *Key, allocator: Allocator, message: []const u8) ![]const u8 {
+        if (self.algorithm == .ed25519 or self.algorithm == .ed448) return self.signED(allocator, message);
         const mctx = c.EVP_MD_CTX_new();
         defer c.EVP_MD_CTX_free(mctx);
         if (mctx == null) return error.CreateContext;
@@ -173,6 +194,7 @@ pub const Key = struct {
     }
 
     pub fn verify(self: *Key, sig: []const u8, message: []const u8) !bool {
+        if (self.algorithm == .ed25519 or self.algorithm == .ed448) return self.verifyED(sig, message);
         const mctx = c.EVP_MD_CTX_new();
         defer c.EVP_MD_CTX_free(mctx);
         if (mctx == null) return error.CreateContext;
@@ -209,8 +231,7 @@ pub const Key = struct {
         return switch (c.EVP_PKEY_id(self.pkey)) {
             c.EVP_PKEY_RSA => self.buildRSADnskey(allocator),
             c.EVP_PKEY_EC => self.buildECDSADnskey(allocator),
-            c.EVP_PKEY_ED25519 => self.buildEDDnskey(allocator),
-            c.EVP_PKEY_DSA => self.buildDSADnskey(allocator),
+            c.EVP_PKEY_ED25519, c.EVP_PKEY_ED448 => self.buildEDDnskey(allocator),
             else => error.InvalidKeyType,
         };
     }
@@ -229,7 +250,7 @@ pub const Key = struct {
         return switch (c.EVP_PKEY_id(self.pkey)) {
             c.EVP_PKEY_RSA => self.fromRawRSA(buf),
             c.EVP_PKEY_EC => self.fromRawECDSA(buf),
-            c.EVP_PKEY_ED25519 => self.fromRawED(buf),
+            c.EVP_PKEY_ED25519, c.EVP_PKEY_ED448 => self.fromRawED(buf),
             else => error.InvalidKeyType,
         };
     }
@@ -291,6 +312,7 @@ pub const Key = struct {
         const group = switch (self.algorithm) {
             .ecdsap256sha256 => "P-256",
             .ecdsap384sha384 => "P-384",
+            else => unreachable,
         };
 
         var sec = try self.allocator.alloc(u8, buf.len + 1);
