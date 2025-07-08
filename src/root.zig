@@ -1,14 +1,16 @@
-pub const dns = @import("dns.zig");
+pub const Message = @import("message.zig");
+const rr = @import("rr.zig");
 pub const dnssec = @import("dnssec.zig");
 pub const util = @import("util/root.zig");
 pub const server = @import("stub_resolver.zig");
 const crypto = util.crypto;
-pub const zone = @import("zone.zig");
+
+pub const Zone = @import("zone.zig").Zone;
 
 const std = @import("std");
 test "name encode/decode" {
     const alloc = std.testing.allocator;
-    var name = dns.Name.init(alloc);
+    var name = Message.Name.init(alloc);
     defer name.deinit();
 
     try name.fromString("example.com");
@@ -21,7 +23,7 @@ test "name encode/decode" {
     var fbr = std.io.fixedBufferStream(buf[0..len]);
     var br = std.io.bufferedReader(fbr.reader().any());
 
-    var decoded = try dns.Name.decode(alloc, &br);
+    var decoded = try Message.Name.decode(alloc, &br);
     defer decoded.deinit();
 
     const got = try decoded.allocPrint(alloc);
@@ -30,7 +32,7 @@ test "name encode/decode" {
 }
 
 test "header encode/decode" {
-    var header = dns.Header{
+    var header = Message.Header{
         .id = 0x1234,
         .flags = .{
             .response = true,
@@ -56,14 +58,14 @@ test "header encode/decode" {
 
     var fbr = std.io.fixedBufferStream(buf[0..len]);
     var br = std.io.bufferedReader(fbr.reader().any());
-    const decoded = try dns.Header.decode(&br);
+    const decoded = try Message.Header.decode(&br);
 
     try std.testing.expectEqualDeep(header, decoded);
 }
 
 test "record encode/decode" {
     const alloc = std.testing.allocator;
-    var record = dns.Record.init(alloc, .a);
+    var record = Message.Record.init(alloc, .a);
     defer record.deinit();
 
     try record.name.fromString("example.com");
@@ -78,7 +80,7 @@ test "record encode/decode" {
     var fbr = std.io.fixedBufferStream(buf[0..len]);
     var br = std.io.bufferedReader(fbr.reader().any());
 
-    var decoded = try dns.Record.decode(alloc, &br);
+    var decoded = try Message.Record.decode(alloc, &br);
     defer decoded.deinit();
 
     const name1 = try record.name.allocPrint(alloc);
@@ -93,7 +95,7 @@ test "record encode/decode" {
 
 test "message encode/decode" {
     const alloc = std.testing.allocator;
-    var msg = dns.Message.init(alloc);
+    var msg = Message.init(alloc);
     defer msg.deinit();
 
     msg.header.id = 0xaaaa;
@@ -115,7 +117,7 @@ test "message encode/decode" {
     const len = try msg.encode(fbs.writer().any());
 
     var fbr = std.io.fixedBufferStream(buf[0..len]);
-    var decoded = try dns.Message.decode(alloc, fbr.reader().any());
+    var decoded = try Message.decode(alloc, fbr.reader().any());
     defer decoded.deinit();
 
     try std.testing.expectEqualDeep(msg.header, decoded.header);
@@ -172,7 +174,7 @@ test "crypto pubkey" {
 
     try key.gen();
 
-    const pubkey = try key.buildDnskeyBase64(alloc);
+    const pubkey = try key.publicKeyBase64(alloc);
     defer alloc.free(pubkey);
 
     std.debug.print("len: {d}\nkey: {s}\n", .{ pubkey.len, pubkey });

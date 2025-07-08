@@ -1,6 +1,6 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
-const DNS = @import("dns.zig");
+const rr = @import("rr.zig");
 
 pub const Algorithm = enum(u8) {
     rsamd5 = 1, // RSA/MD5 [RFC4034][RFC3110]
@@ -12,7 +12,7 @@ pub const Algorithm = enum(u8) {
     ecdsap256sha256 = 13, // ECDSA Curve P-256 with SHA-256 [RFC6605]
     ecdsap384sha384 = 14, // ECDSA Curve P-384 with SHA-384 [RFC6605]
     ed25519 = 15, // Ed25519 [RFC8080]
-    ed448 = 16, // Ed25519 [RFC8080]
+    ed448 = 16, // Ed448 [RFC8080]
     unknown = 255, // Reserved for Private Use
 };
 
@@ -59,13 +59,13 @@ pub const DS = struct {
 };
 
 pub const Sig = struct {
-    type_covered: DNS.Type,
+    type_covered: rr.Type,
     algorithm: Algorithm,
     label_count: u8,
     original_ttl: u32,
     expiration: i64,
     inception: i64,
     key_tag: u16,
-    signers_name: DNS.Name,
+    signers_name: rr.Name,
     signature: ArrayList(u8),
 };

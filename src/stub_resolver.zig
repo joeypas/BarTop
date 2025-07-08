@@ -1,5 +1,5 @@
 const std = @import("std");
-const dns = @import("dns.zig");
+const Message = @import("message.zig");
 const net = std.net;
 const fs = std.fs;
 const posix = std.posix;
@@ -49,7 +49,7 @@ const UDP = xev.UDP;
 pub const StubResolver = struct {
     options: Options,
     allocator: Allocator,
-    dns_cache: LRU(dns.Message),
+    dns_cache: LRU(Message.Message),
     bind_addr: net.Address,
     resolv: []const u8,
     udp: UDP,
@@ -71,7 +71,7 @@ pub const StubResolver = struct {
 
         return .{
             .allocator = allocator,
-            .dns_cache = LRU(dns.Message).init(allocator, 512),
+            .dns_cache = LRU(Message.Message).init(allocator, 512),
             .bind_addr = addr,
             .options = options,
             .resolv = resolv,
@@ -283,8 +283,8 @@ pub const StubResolver = struct {
         var fbr = std.io.fixedBufferStream(query);
         var fbw = std.io.fixedBufferStream(response);
 
-        var packet = try dns.Message.decode(allocator, fbr.reader().any());
-        var response_packet = dns.Message.init(allocator);
+        var packet = try Message.Message.decode(allocator, fbr.reader().any());
+        var response_packet = Message.Message.init(allocator);
         // doing alot of copying but we dont want to have to clone allocations
         response_packet.ref = true;
         defer response_packet.deinit();
@@ -316,7 +316,7 @@ pub const StubResolver = struct {
                 );
 
                 var tmp_reader = std.io.fixedBufferStream(tmp_response[0..external_len]);
-                const res = dns.Message.decode(
+                const res = Message.Message.decode(
                     allocator,
                     tmp_reader.reader().any(),
                 ) catch |err| {
@@ -336,7 +336,7 @@ pub const StubResolver = struct {
 
 // Copy records from one message to another
 // Update: only copy references
-fn glue(message: *dns.Message, other: dns.Message) !void {
+fn glue(message: *Message.Message, other: Message.Message) !void {
     try message.answers.appendSlice(other.answers.items);
     message.header.an_count += other.header.an_count;
 
@@ -381,10 +381,10 @@ fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !u
     return recv_bytes;
 }
 
-inline fn createDnsResponse(message: *dns.Message, packet: *dns.Message) !void {
-    message.header = dns.Header{
+inline fn createDnsResponse(message: *Message.Message, packet: *Message.Message) !void {
+    message.header = Message.Header{
         .id = packet.header.id,
-        .flags = dns.Flags{
+        .flags = Message.Flags{
             .response = true,
             .op_code = .query,
             .authoritative = false,
@@ -402,11 +402,11 @@ inline fn createDnsResponse(message: *dns.Message, packet: *dns.Message) !void {
     try message.questions.appendSlice(packet.questions.items);
 }
 
-inline fn createDnsError(allocator: Allocator, err: dns.ResponseCode) dns.Message {
-    var message = dns.Message.init(allocator);
-    message.header = dns.Header{
+inline fn createDnsError(allocator: Allocator, err: Message.ResponseCode) Message.Message {
+    var message = Message.Message.init(allocator);
+    message.header = Message.Header{
         .id = 0,
-        .flags = dns.Flags{
+        .flags = Message.Flags{
             .response = true,
             .op_code = .query,
             .authoritative = false,

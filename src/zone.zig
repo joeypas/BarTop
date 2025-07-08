@@ -1,19 +1,19 @@
 const std = @import("std");
-const dns = @import("dns.zig");
+const Message = @import("message.zig");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
 pub const Zone = struct {
-    soa: dns.Record,
-    records: ArrayList(dns.Record),
+    soa: Message.Record,
+    records: ArrayList(Message.Record),
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) Zone {
-        var soa = dns.Record.init(allocator, .soa);
+        var soa = Message.Record.init(allocator, .soa);
         soa.ref = true;
         return Zone{
             .soa = soa,
-            .records = ArrayList(dns.Record).init(allocator),
+            .records = ArrayList(Message.Record).init(allocator),
             .allocator = allocator,
         };
     }
@@ -27,21 +27,21 @@ pub const Zone = struct {
         self.records.deinit();
     }
 
-    pub fn getSoa(self: *Zone) *dns.Record {
+    pub fn getSoa(self: *Zone) *Message.Record {
         return &self.soa;
     }
 
     /// Record becomes managed by the zone, it is freed on deinit
-    pub fn addRecord(self: *Zone, record: dns.Record) !void {
+    pub fn addRecord(self: *Zone, record: Message.Record) !void {
         try self.records.append(record);
     }
 
     /// Records become managed by the zone, they are freed on deinit
-    pub fn addRecords(self: *Zone, records: []dns.Record) !void {
+    pub fn addRecords(self: *Zone, records: []Message.Record) !void {
         try self.records.appendSlice(records);
     }
 
-    pub fn getRecords(self: *Zone) []const dns.Record {
+    pub fn getRecords(self: *Zone) []const Message.Record {
         return self.records.items;
     }
 
@@ -148,7 +148,7 @@ fn parseResourceRecord(
     origin: ?[]const u8,
     default_ttl: u32,
     last_name: *?[]const u8,
-) !?dns.Record {
+) !?Message.Record {
     var tokens = std.mem.tokenizeAny(u8, line, " \t");
 
     var name: []const u8 = undefined;
@@ -177,7 +177,7 @@ fn parseResourceRecord(
     }
 
     var ttl = default_ttl;
-    var class: dns.Class = .in;
+    var class: Message.Class = .in;
     var record_type_str: []const u8 = undefined;
 
     // get class and ttl
@@ -195,7 +195,7 @@ fn parseResourceRecord(
     record_type_str = first_token;
     const record_type = parseRecordType(record_type_str) orelse return null;
 
-    var record = dns.Record.init(allocator, record_type);
+    var record = Message.Record.init(allocator, record_type);
     record.ttl = ttl;
     record.class = class;
     record.type = record_type;
@@ -234,7 +234,7 @@ fn isRecordType(str: []const u8) bool {
     return false;
 }
 
-fn parseRecordType(str: []const u8) ?dns.Type {
+fn parseRecordType(str: []const u8) ?Message.Type {
     if (std.ascii.eqlIgnoreCase(str, "A")) return .a;
     if (std.ascii.eqlIgnoreCase(str, "AAAA")) return .aaaa;
     if (std.ascii.eqlIgnoreCase(str, "CNAME")) return .cname;
@@ -247,7 +247,7 @@ fn parseRecordType(str: []const u8) ?dns.Type {
     return null;
 }
 
-fn parseClass(str: []const u8) ?dns.Class {
+fn parseClass(str: []const u8) ?Message.Class {
     if (std.ascii.eqlIgnoreCase(str, "IN")) return .in;
     if (std.ascii.eqlIgnoreCase(str, "CS")) return .cs;
     if (std.ascii.eqlIgnoreCase(str, "CH")) return .ch;
@@ -255,27 +255,27 @@ fn parseClass(str: []const u8) ?dns.Class {
     return null;
 }
 
-fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), allocator: Allocator) !void {
+fn parseRData(record: *Message.Record, tokens: *std.mem.TokenIterator(u8, .any), allocator: Allocator) !void {
     switch (record.type) {
         .a => {
             const addr_str = tokens.next() orelse return error.MissingRData;
             const addr = std.net.Ip4Address.parse(addr_str, 0) catch return error.InvalidAddress;
-            record.rdata = dns.RData{ .a = .{ .addr = addr } };
+            record.rdata = Message.RData{ .a = .{ .addr = addr } };
         },
         .aaaa => {
             const addr_str = tokens.next() orelse return error.MissingRData;
             const addr = std.net.Ip6Address.parse(addr_str, 0) catch return error.InvalidAddress;
-            record.rdata = dns.RData{ .aaaa = .{ .addr = addr } };
+            record.rdata = Message.RData{ .aaaa = .{ .addr = addr } };
         },
         .cname, .ns, .ptr => {
             const name_str = tokens.next() orelse return error.MissingRData;
-            var name = dns.Name.init(allocator);
+            var name = Message.Name.init(allocator);
             try name.fromString(name_str);
 
             switch (record.type) {
-                .cname => record.rdata = dns.RData{ .cname = .{ .name = name } },
-                .ns => record.rdata = dns.RData{ .ns = .{ .name = name } },
-                .ptr => record.rdata = dns.RData{ .ptr = .{ .name = name } },
+                .cname => record.rdata = Message.RData{ .cname = .{ .name = name } },
+                .ns => record.rdata = Message.RData{ .ns = .{ .name = name } },
+                .ptr => record.rdata = Message.RData{ .ptr = .{ .name = name } },
                 else => unreachable,
             }
         },
@@ -284,10 +284,10 @@ fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), all
             const exchange_str = tokens.next() orelse return error.MissingRData;
 
             const priority = std.fmt.parseInt(u16, priority_str, 10) catch return error.InvalidPriority;
-            var exchange = dns.Name.init(allocator);
+            var exchange = Message.Name.init(allocator);
             try exchange.fromString(exchange_str);
 
-            record.rdata = dns.RData{ .mx = .{ .preface = priority, .exchange = exchange } };
+            record.rdata = Message.RData{ .mx = .{ .preface = priority, .exchange = exchange } };
         },
         .soa => {
             const mname_str = tokens.next() orelse return error.MissingRData;
@@ -298,10 +298,10 @@ fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), all
             const expire_str = tokens.next() orelse return error.MissingRData;
             const minimum_str = tokens.next() orelse return error.MissingRData;
 
-            var mname = dns.Name.init(allocator);
+            var mname = Message.Name.init(allocator);
             try mname.fromString(mname_str);
 
-            var rname = dns.Name.init(allocator);
+            var rname = Message.Name.init(allocator);
             try rname.fromString(rname_str);
 
             const serial = std.fmt.parseInt(u32, serial_str, 10) catch return error.InvalidSerial;
@@ -310,7 +310,7 @@ fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), all
             const expire = std.fmt.parseInt(u32, expire_str, 10) catch return error.InvalidExpire;
             const minimum = std.fmt.parseInt(u32, minimum_str, 10) catch return error.InvalidMinimum;
 
-            record.rdata = dns.RData{ .soa = .{
+            record.rdata = Message.RData{ .soa = .{
                 .mname = mname,
                 .rname = rname,
                 .serial = serial,
@@ -330,10 +330,10 @@ fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), all
             const weight = std.fmt.parseInt(u16, weight_str, 10) catch return error.InvalidWeight;
             const port = std.fmt.parseInt(u16, port_str, 10) catch return error.InvalidPort;
 
-            var target = dns.Name.init(allocator);
+            var target = Message.Name.init(allocator);
             try target.fromString(target_str);
 
-            record.rdata = dns.RData{ .srv = .{
+            record.rdata = Message.RData{ .srv = .{
                 .priority = priority,
                 .weight = weight,
                 .port = port,
@@ -355,10 +355,10 @@ fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), all
                 try txt_data.appendSlice(content);
             }
 
-            var name = dns.Name.init(allocator);
+            var name = Message.Name.init(allocator);
             try name.fromString("");
 
-            record.rdata = dns.RData{ .txt = .{ .name = name } };
+            record.rdata = Message.RData{ .txt = .{ .name = name } };
         },
         else => {
             var raw_data = ArrayList(u8).init(allocator);
@@ -368,7 +368,7 @@ fn parseRData(record: *dns.Record, tokens: *std.mem.TokenIterator(u8, .any), all
                 }
                 try raw_data.appendSlice(token);
             }
-            record.rdata = dns.RData{ .data = raw_data };
+            record.rdata = Message.RData{ .data = raw_data };
         },
     }
 

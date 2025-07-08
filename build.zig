@@ -36,6 +36,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/root.zig"),
     });
 
+    dns.addImport("xev", xev.module("xev"));
+
     dns.linkLibrary(openssl.artifact("crypto"));
     dns.linkLibrary(openssl.artifact("ssl"));
     dns.addIncludePath(openssl.artifact("crypto").getEmittedIncludeTree());
@@ -64,7 +66,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    list[1].root_module.addImport("xev", xev.module("xev"));
+    //list[1].root_module.addImport("xev", xev.module("xev"));
+    list[1].root_module.addImport("dns", dns);
 
     list[2] = b.addExecutable(.{
         .name = "Client",
@@ -74,6 +77,7 @@ pub fn build(b: *std.Build) void {
     });
 
     list[2].root_module.addImport("clap", clap.module("clap"));
+    list[2].root_module.addImport("dns", dns);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

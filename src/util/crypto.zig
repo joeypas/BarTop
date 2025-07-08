@@ -9,6 +9,7 @@ const c = @cImport({
     @cInclude("openssl/bio.h");
     @cInclude("openssl/pem.h");
     @cInclude("openssl/core_names.h");
+    @cDefine("OPENSSL_NO_DEPRECATED", {});
 });
 
 var propq: [*]u8 = undefined;
@@ -36,6 +37,7 @@ const Digest = enum {
     none,
 };
 
+// TODO: Once zig std has better crypto support (only EC, ED25519 have keygen/signing) migrate to that
 pub const Key = struct {
     pkey: ?*c.EVP_PKEY,
     ctx: Context,
@@ -217,17 +219,17 @@ pub const Key = struct {
         return true;
     }
 
-    pub fn buildDnskeyBase64(self: *Key, allocator: Allocator) ![]const u8 {
+    pub fn publicKeyBase64(self: *Key, allocator: Allocator) ![]const u8 {
         const enc = std.base64.standard.Encoder;
 
-        const key = try self.buildDnskey(allocator);
+        const key = try self.publicKey(allocator);
         defer allocator.free(key);
 
         var buf = try allocator.alloc(u8, enc.calcSize(key.len));
         return enc.encode(buf[0..], key);
     }
 
-    pub fn buildDnskey(self: *Key, allocator: Allocator) ![]const u8 {
+    pub fn publicKey(self: *Key, allocator: Allocator) ![]const u8 {
         return switch (c.EVP_PKEY_id(self.pkey)) {
             c.EVP_PKEY_RSA => self.buildRSADnskey(allocator),
             c.EVP_PKEY_EC => self.buildECDSADnskey(allocator),
