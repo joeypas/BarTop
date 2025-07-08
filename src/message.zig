@@ -15,6 +15,7 @@ const rr = @import("rr.zig");
 pub const Question = rr.Question;
 pub const Record = rr.Record;
 pub const Type = rr.Type;
+pub const Class = rr.Class;
 pub const Name = rr.Name;
 
 allocator: Allocator,

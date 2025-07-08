@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) void {
     dns.addImport("xev", xev.module("xev"));
 
     dns.linkLibrary(openssl.artifact("crypto"));
-    dns.linkLibrary(openssl.artifact("ssl"));
+    //dns.linkLibrary(openssl.artifact("ssl"));
     dns.addIncludePath(openssl.artifact("crypto").getEmittedIncludeTree());
     dns.addIncludePath(openssl.artifact("ssl").getEmittedIncludeTree());
 
