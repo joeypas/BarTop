@@ -188,6 +188,29 @@ pub fn allocPrint(self: *Message, allocator: Allocator) ![]u8 {
     return array.toOwnedSlice();
 }
 
+pub fn format(self: Message, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+
+    try writer.print("{s}\n", .{self.header});
+
+    for (self.questions.items) |question| {
+        try writer.print("{s}\n", .{question});
+    }
+
+    for (self.answers.items) |*record| {
+        try writer.print("{s}\n", .{record});
+    }
+
+    for (self.authorities.items) |*record| {
+        try writer.print("{s}\n", .{record});
+    }
+
+    for (self.additionals.items) |*record| {
+        try writer.print("{s}\n", .{record});
+    }
+}
+
 pub const ResponseCode = enum(u4) {
     no_error,
     format_error,
@@ -256,6 +279,23 @@ pub const Header = packed struct {
     pub fn print(self: *Header, buf: []u8) ![]u8 {
         return std.fmt.bufPrint(
             buf,
+            \\Header: [
+            \\  id: {d},
+            \\  flags: {any},
+            \\  qd_count: {d},
+            \\  an_count: {d},
+            \\  ns_count: {d},
+            \\  ar_count: {d},
+            \\],
+        ,
+            .{ self.id, self.flags, self.qd_count, self.an_count, self.ns_count, self.ar_count },
+        );
+    }
+
+    pub fn format(self: Header, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print(
             \\Header: [
             \\  id: {d},
             \\  flags: {any},

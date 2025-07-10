@@ -45,11 +45,12 @@ pub const Zone = struct {
         return self.records.items;
     }
 
+    // This is a mess but it works for now
     pub fn parseFromString(allocator: Allocator, content: []const u8) !Zone {
         var zone = Zone.init(allocator);
         errdefer zone.deinit();
 
-        var lines = std.mem.splitAny(u8, content, "\n");
+        var lines = std.mem.splitAny(u8, content, "\n\r");
         var origin: ?[]const u8 = null;
         var default_ttl: u32 = 86400;
         var last_name: ?[]const u8 = null;
@@ -58,7 +59,7 @@ pub const Zone = struct {
         var in_parentheses = false;
 
         while (lines.next()) |line| {
-            var trimmed = std.mem.trim(u8, line, " \t\r");
+            var trimmed = std.mem.trim(u8, line, " \t");
 
             // remove inline comments
             if (std.mem.indexOf(u8, trimmed, ";")) |comment_pos| {
@@ -75,6 +76,12 @@ pub const Zone = struct {
                 const cleaned = std.mem.replaceOwned(u8, allocator, trimmed, "(", "") catch trimmed;
                 defer if (cleaned.ptr != trimmed.ptr) allocator.free(cleaned);
 
+                // check if this is actually a fake multi-line record
+                if (std.mem.indexOf(u8, cleaned, ")")) |idx| {
+                    try processRecord(allocator, &zone, cleaned[0..idx], &origin, &default_ttl, &last_name);
+                    in_parentheses = false;
+                    continue;
+                }
                 try multi_line_buffer.appendSlice(cleaned);
                 try multi_line_buffer.append(' ');
                 continue;
@@ -86,7 +93,9 @@ pub const Zone = struct {
                     defer if (cleaned.ptr != trimmed.ptr) allocator.free(cleaned);
 
                     try multi_line_buffer.appendSlice(cleaned);
-
+                    if (std.mem.indexOf(u8, trimmed, ";")) |comment_pos| {
+                        trimmed = std.mem.trim(u8, trimmed[0..comment_pos], " \t");
+                    }
                     const complete_line = std.mem.trim(u8, multi_line_buffer.items, " \t");
                     try processRecord(allocator, &zone, complete_line, &origin, &default_ttl, &last_name);
 
@@ -130,81 +139,44 @@ pub const Zone = struct {
             return;
         }
 
-        if (try parseResourceRecord(allocator, line, origin.*, default_ttl.*, last_name)) |record| {
-            if (record.type == .soa) {
-                zone.soa.deinit();
-                zone.soa = record;
-                zone.soa.ref = true;
-            } else {
-                try zone.addRecord(record);
-            }
+        var record = try parseResourceRecord(allocator, line, origin.*, default_ttl.*, last_name);
+        errdefer record.deinit();
+        if (record.type == .soa) {
+            zone.soa.deinit();
+            zone.soa = record;
+            zone.soa.ref = true;
+        } else {
+            try zone.addRecord(record);
         }
     }
 };
 
-fn parseResourceRecord(
-    allocator: Allocator,
-    line: []const u8,
-    origin: ?[]const u8,
-    default_ttl: u32,
-    last_name: *?[]const u8,
-) !?Message.Record {
-    var tokens = std.mem.tokenizeAny(u8, line, " \t");
+fn parseResourceRecord(allocator: Allocator, line: []const u8, origin: ?[]const u8, default_ttl: u32, last_name: *?[]const u8) !Message.Record {
+    var tokens = try tokenize(allocator, line);
+    defer tokens.deinit();
 
-    var name: []const u8 = undefined;
-    var first_token = tokens.next() orelse return null;
+    const rec = try collectFields(origin, last_name.*, default_ttl, tokens);
+    defer allocator.free(rec.data);
 
-    if (first_token[0] == '@') {
-        // origin
-        name = "";
-        first_token = tokens.next() orelse return null;
-    } else if (std.mem.indexOf(u8, first_token, ".") != null or
-        isRecordType(first_token) or parseClass(first_token) != null)
-    {
-        // prev
-        name = last_name.* orelse "";
-        var remaining = line;
-        if (std.mem.indexOf(u8, line, first_token)) |pos| {
-            remaining = line[pos..];
-        }
-        tokens = std.mem.tokenizeAny(u8, remaining, " \t");
-        first_token = tokens.next() orelse return null;
-    } else {
-        // full name
-        name = first_token;
-        last_name.* = name;
-        first_token = tokens.next() orelse return null;
+    var record = Message.Record.init(allocator, rec.type);
+    errdefer record.deinit();
+
+    last_name.* = rec.name;
+    try record.name.fromString(rec.name);
+
+    // rhHandle relative host name
+    if (record.name.labels.items.len <= 1) {
+        try record.name.fromString(origin.?);
     }
+    record.ttl = rec.ttl;
+    record.class = rec.class;
 
-    var ttl = default_ttl;
-    var class: Message.Class = .in;
-    var record_type_str: []const u8 = undefined;
-
-    // get class and ttl
-    if (std.fmt.parseInt(u32, first_token, 10)) |parsed_ttl| {
-        ttl = parsed_ttl;
-        first_token = tokens.next() orelse return null;
-    } else |_| {}
-
-    if (parseClass(first_token)) |parsed_class| {
-        class = parsed_class;
-        first_token = tokens.next() orelse return null;
-    }
-
-    // get type
-    record_type_str = first_token;
-    const record_type = parseRecordType(record_type_str) orelse return null;
-
-    var record = Message.Record.init(allocator, record_type);
-    record.ttl = ttl;
-    record.class = class;
-    record.type = record_type;
-
-    try record.name.addLabel(name);
-    try record.name.fromString(origin orelse "");
-
-    // parse data
-    try parseRData(&record, &tokens, allocator);
+    // ew
+    record.rdata.deinit();
+    record.rdata = Message.RData.fromString(rec.type, allocator, rec.data) catch |err| {
+        std.debug.print("Err at: {s}\n", .{rec.data});
+        return err;
+    };
 
     return record;
 }
@@ -226,153 +198,129 @@ fn parseDirective(line: []const u8, origin: *?[]const u8, default_ttl: *u32) !vo
     }
 }
 
-fn isRecordType(str: []const u8) bool {
-    const types = [_][]const u8{ "A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT" };
-    for (types) |t| {
-        if (std.ascii.eqlIgnoreCase(str, t)) return true;
-    }
-    return false;
-}
+const TokenType = enum {
+    name,
+    ttl,
+    class,
+    type,
+    data,
+};
 
-fn parseRecordType(str: []const u8) ?Message.Type {
-    if (std.ascii.eqlIgnoreCase(str, "A")) return .a;
-    if (std.ascii.eqlIgnoreCase(str, "AAAA")) return .aaaa;
-    if (std.ascii.eqlIgnoreCase(str, "CNAME")) return .cname;
-    if (std.ascii.eqlIgnoreCase(str, "MX")) return .mx;
-    if (std.ascii.eqlIgnoreCase(str, "NS")) return .ns;
-    if (std.ascii.eqlIgnoreCase(str, "PTR")) return .ptr;
-    if (std.ascii.eqlIgnoreCase(str, "SOA")) return .soa;
-    if (std.ascii.eqlIgnoreCase(str, "SRV")) return .srv;
-    if (std.ascii.eqlIgnoreCase(str, "TXT")) return .txt;
-    return null;
-}
+const Token = union(TokenType) {
+    name: ?[]const u8,
+    ttl: u32,
+    class: Message.Class,
+    type: Message.Type,
+    data: []const u8,
+};
 
-fn parseClass(str: []const u8) ?Message.Class {
-    if (std.ascii.eqlIgnoreCase(str, "IN")) return .in;
-    if (std.ascii.eqlIgnoreCase(str, "CS")) return .cs;
-    if (std.ascii.eqlIgnoreCase(str, "CH")) return .ch;
-    if (std.ascii.eqlIgnoreCase(str, "HS")) return .hs;
-    return null;
-}
+fn tokenize(allocator: Allocator, line: []const u8) !ArrayList(Token) {
+    var ret = ArrayList(Token).init(allocator);
+    errdefer ret.deinit();
+    var tokens = std.mem.tokenizeAny(u8, line, " \t");
 
-fn parseRData(record: *Message.Record, tokens: *std.mem.TokenIterator(u8, .any), allocator: Allocator) !void {
-    switch (record.type) {
-        .a => {
-            const addr_str = tokens.next() orelse return error.MissingRData;
-            const addr = std.net.Ip4Address.parse(addr_str, 0) catch return error.InvalidAddress;
-            record.rdata = Message.RData{ .a = .{ .addr = addr } };
-        },
-        .aaaa => {
-            const addr_str = tokens.next() orelse return error.MissingRData;
-            const addr = std.net.Ip6Address.parse(addr_str, 0) catch return error.InvalidAddress;
-            record.rdata = Message.RData{ .aaaa = .{ .addr = addr } };
-        },
-        .cname, .ns, .ptr => {
-            const name_str = tokens.next() orelse return error.MissingRData;
-            var name = Message.Name.init(allocator);
-            try name.fromString(name_str);
+    var data_buf = ArrayList(u8).init(allocator);
+    errdefer data_buf.deinit();
 
-            switch (record.type) {
-                .cname => record.rdata = Message.RData{ .cname = .{ .name = name } },
-                .ns => record.rdata = Message.RData{ .ns = .{ .name = name } },
-                .ptr => record.rdata = Message.RData{ .ptr = .{ .name = name } },
-                else => unreachable,
+    var got_type = false;
+    var first = true;
+    while (tokens.next()) |tok| {
+        var buf: [255]u8 = undefined;
+        if (std.ascii.isDigit(tok[0]) and got_type == false) {
+            const ttl = try std.fmt.parseInt(u32, tok, 10);
+            try ret.append(Token{ .ttl = ttl });
+        } else if (tok[0] == '@') {
+            try ret.append(Token{ .name = null });
+        } else if (std.meta.stringToEnum(Message.Class, std.ascii.lowerString(&buf, tok))) |class| {
+            try ret.append(Token{ .class = class });
+        } else if (std.meta.stringToEnum(Message.Type, std.ascii.lowerString(&buf, tok))) |typ| {
+            // edge case where relative host name is also a type
+            if (!first) {
+                try ret.append(Token{ .type = typ });
+                got_type = true;
+            } else {
+                try ret.append(Token{ .name = tok });
             }
-        },
-        .mx => {
-            const priority_str = tokens.next() orelse return error.MissingRData;
-            const exchange_str = tokens.next() orelse return error.MissingRData;
-
-            const priority = std.fmt.parseInt(u16, priority_str, 10) catch return error.InvalidPriority;
-            var exchange = Message.Name.init(allocator);
-            try exchange.fromString(exchange_str);
-
-            record.rdata = Message.RData{ .mx = .{ .preface = priority, .exchange = exchange } };
-        },
-        .soa => {
-            const mname_str = tokens.next() orelse return error.MissingRData;
-            const rname_str = tokens.next() orelse return error.MissingRData;
-            const serial_str = tokens.next() orelse return error.MissingRData;
-            const refresh_str = tokens.next() orelse return error.MissingRData;
-            const retry_str = tokens.next() orelse return error.MissingRData;
-            const expire_str = tokens.next() orelse return error.MissingRData;
-            const minimum_str = tokens.next() orelse return error.MissingRData;
-
-            var mname = Message.Name.init(allocator);
-            try mname.fromString(mname_str);
-
-            var rname = Message.Name.init(allocator);
-            try rname.fromString(rname_str);
-
-            const serial = std.fmt.parseInt(u32, serial_str, 10) catch return error.InvalidSerial;
-            const refresh = std.fmt.parseInt(u32, refresh_str, 10) catch return error.InvalidRefresh;
-            const retry = std.fmt.parseInt(u32, retry_str, 10) catch return error.InvalidRetry;
-            const expire = std.fmt.parseInt(u32, expire_str, 10) catch return error.InvalidExpire;
-            const minimum = std.fmt.parseInt(u32, minimum_str, 10) catch return error.InvalidMinimum;
-
-            record.rdata = Message.RData{ .soa = .{
-                .mname = mname,
-                .rname = rname,
-                .serial = serial,
-                .refresh = refresh,
-                .retry = retry,
-                .expire = expire,
-                .minimum = minimum,
-            } };
-        },
-        .srv => {
-            const priority_str = tokens.next() orelse return error.MissingRData;
-            const weight_str = tokens.next() orelse return error.MissingRData;
-            const port_str = tokens.next() orelse return error.MissingRData;
-            const target_str = tokens.next() orelse return error.MissingRData;
-
-            const priority = std.fmt.parseInt(u16, priority_str, 10) catch return error.InvalidPriority;
-            const weight = std.fmt.parseInt(u16, weight_str, 10) catch return error.InvalidWeight;
-            const port = std.fmt.parseInt(u16, port_str, 10) catch return error.InvalidPort;
-
-            var target = Message.Name.init(allocator);
-            try target.fromString(target_str);
-
-            record.rdata = Message.RData{ .srv = .{
-                .priority = priority,
-                .weight = weight,
-                .port = port,
-                .target = target,
-            } };
-        },
-        .txt => {
-            var txt_data = ArrayList(u8).init(allocator);
-            while (tokens.next()) |token| {
-                if (txt_data.items.len > 0) {
-                    try txt_data.append(' ');
-                }
-                try txt_data.appendSlice(token);
+        } else {
+            if (got_type) {
+                try data_buf.appendSlice(tok);
+                try data_buf.append(' ');
+            } else {
+                try ret.append(Token{ .name = tok });
             }
-
-            if (txt_data.items.len >= 2 and txt_data.items[0] == '"' and txt_data.items[txt_data.items.len - 1] == '"') {
-                const content = txt_data.items[1 .. txt_data.items.len - 1];
-                txt_data.clearAndFree();
-                try txt_data.appendSlice(content);
-            }
-
-            var name = Message.Name.init(allocator);
-            try name.fromString("");
-
-            record.rdata = Message.RData{ .txt = .{ .name = name } };
-        },
-        else => {
-            var raw_data = ArrayList(u8).init(allocator);
-            while (tokens.next()) |token| {
-                if (raw_data.items.len > 0) {
-                    try raw_data.append(' ');
-                }
-                try raw_data.appendSlice(token);
-            }
-            record.rdata = Message.RData{ .data = raw_data };
-        },
+        }
+        first = false;
     }
 
-    record.rdlength = record.rdata.getLen();
+    try ret.append(Token{ .data = try data_buf.toOwnedSlice() });
+
+    return ret;
+}
+
+const Rec = struct {
+    name: []const u8,
+    ttl: u32,
+    class: Message.Class,
+    type: Message.Type,
+    data: []const u8,
+};
+
+fn collectFields(origin: ?[]const u8, prev_name: ?[]const u8, default_ttl: u32, tokens: ArrayList(Token)) !Rec {
+    const NullRec = struct {
+        name: ?[]const u8 = null,
+        ttl: ?u32 = null,
+        class: ?Message.Class = null,
+        type: ?Message.Type = null,
+        data: ?[]const u8 = null,
+    };
+    var ret = NullRec{};
+    for (tokens.items) |token| {
+        switch (token) {
+            .name => |name| {
+                if (ret.name != null) return error.DuplicateField;
+                if (name == null) {
+                    if (origin == null) return error.NoOrigin;
+                    ret.name = origin;
+                } else {
+                    ret.name = name;
+                }
+            },
+            .ttl => |ttl| {
+                if (ret.ttl != null) return error.DuplicateField;
+                ret.ttl = ttl;
+            },
+            .class => |class| {
+                if (ret.class != null) return error.DuplicateField;
+                ret.class = class;
+            },
+            .type => |@"type"| {
+                if (ret.type != null) return error.DuplicateField;
+                ret.type = @"type";
+            },
+            .data => |data| {
+                if (ret.data != null) return error.DuplicateField;
+                ret.data = data;
+            },
+        }
+    }
+    return Rec{
+        .name = ret.name orelse prev_name orelse return error.NoName,
+        .ttl = ret.ttl orelse default_ttl,
+        .class = ret.class orelse return error.MissingClass,
+        .type = ret.type orelse return error.MissingType,
+        .data = ret.data orelse return error.MissingData,
+    };
+}
+
+test "get Rec" {
+    const allocator = std.testing.allocator;
+    var tokens = try tokenize(allocator, "IN  MX    10 mail.example.com.");
+    defer tokens.deinit();
+    const rec = try collectFields("test.com.", "example.com.", 3200, tokens);
+    defer allocator.free(rec.data);
+    var rdata = try Message.RData.fromString(rec.type, allocator, rec.data);
+    defer rdata.deinit();
+    std.debug.print("{}\n", .{rdata});
 }
 
 test "parse zone" {
@@ -401,14 +349,13 @@ test "parse zone" {
     var zone = try Zone.parseFromString(allocator, zone_content);
     defer zone.deinit();
 
+    var zone2 = try Zone.parseFromFile(allocator, "resource/test.zone");
+    defer zone2.deinit();
+
     std.debug.print("Zone parsed successfully!\n", .{});
-    std.debug.print("Number of records: {}\n", .{zone.records.items.len});
-    for (zone.records.items) |*record| {
-        var buf: [512]u8 = undefined;
-        const str = try record.print(&buf);
-        std.debug.print("{s}\n", .{str});
+    std.debug.print("Number of records: {}\n", .{zone2.records.items.len});
+    for (zone2.records.items) |record| {
+        std.debug.print("{s}\n", .{record});
     }
-    var buf: [1024]u8 = undefined;
-    const str = try zone.soa.print(&buf);
-    std.debug.print("{s}\n", .{str});
+    std.debug.print("{s}\n", .{zone2.soa});
 }

@@ -69,3 +69,14 @@ pub const Sig = struct {
     signers_name: rr.Name,
     signature: ArrayList(u8),
 };
+
+pub const NSEC3 = struct {
+    hash_algorithm: NSEC3HashAlgorithm,
+    flags: u8,
+    iterations: u16,
+    salt_len: u8,
+    salt: ArrayList(u8),
+    hash_len: u8,
+    hash: ArrayList(u8),
+    type_bitmap: ArrayList(u8),
+};

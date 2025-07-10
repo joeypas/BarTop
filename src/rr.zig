@@ -152,6 +152,15 @@ pub const Name = struct {
         return ret.toOwnedSlice();
     }
 
+    pub fn format(self: Name, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        for (self.labels.items) |item| {
+            try writer.print("{s}.", .{item.items});
+        }
+    }
+
     /// Given a string representation of a Domain Name, split into labels and add to internal list
     pub fn fromString(self: *Name, name: []const u8) !void {
         var itr = std.mem.splitAny(u8, name, ". ");
@@ -164,6 +173,13 @@ pub const Name = struct {
             @memcpy(slice[0..], part);
             try self.labels.append(array);
         }
+    }
+
+    pub fn initString(allocator: Allocator, name: []const u8) !Name {
+        var ret = Name.init(allocator);
+        errdefer ret.deinit();
+        try ret.fromString(name);
+        return ret;
     }
 };
 
@@ -183,6 +199,7 @@ pub const Type = enum(u16) {
     dnskey = 48,
     ds = 43,
     sig = 24,
+    nsec3 = 50,
     //ixfr = 251,
     //axfr = 252,
     //any = 255,
@@ -248,16 +265,30 @@ pub const Question = struct {
     }
 
     pub fn print(self: *Question, buf: []u8) ![]u8 {
-        var name_buf: [255]u8 = undefined;
         return std.fmt.bufPrint(
             buf,
             \\Question: [
-            \\  qname: {s},
+            \\  qname: {},
             \\  qtype: {any},
             \\  qclass: {any},
             \\],
         ,
-            .{ try self.qname.print(&name_buf, null), self.qtype, self.qclass },
+            .{ self.qname, self.qtype, self.qclass },
+        );
+    }
+
+    pub fn format(self: Question, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print(
+            \\Question: [
+            \\  qname: {},
+            \\  qtype: {any},
+            \\  qclass: {any},
+            \\],
+        ,
+            .{ self.qname, self.qtype, self.qclass },
         );
     }
 };
@@ -329,19 +360,36 @@ pub const Record = struct {
     }
 
     pub fn print(self: *Record, buf: []u8) ![]u8 {
-        var name_buf: [255]u8 = undefined;
         return std.fmt.bufPrint(
             buf,
             \\Record: [
-            \\  name: {s},
+            \\  name: {},
             \\  type: {any},
             \\  class: {any},
             \\  ttl: {d},
             \\  rdlength: {d},
-            \\  rdata: {any},
+            \\  rdata: {},
             \\],
         ,
-            .{ try self.name.print(&name_buf, null), self.type, self.class, self.ttl, self.rdlength, self.rdata },
+            .{ self.name, self.type, self.class, self.ttl, self.rdlength, self.rdata },
+        );
+    }
+
+    pub fn format(self: Record, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print(
+            \\Record: [
+            \\  name: {},
+            \\  type: {any},
+            \\  class: {any},
+            \\  ttl: {d},
+            \\  rdlength: {d},
+            \\  rdata: {},
+            \\],
+        ,
+            .{ self.name, self.type, self.class, self.ttl, self.rdlength, self.rdata },
         );
     }
 

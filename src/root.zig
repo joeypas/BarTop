@@ -104,11 +104,22 @@ test "message encode/decode" {
 
     const q = try msg.addQuestion();
     try q.qname.fromString("example.com");
-    q.qtype = .a;
+    q.qtype = .nsec3;
 
-    const a = try msg.addAnswer(.a);
+    const a = try msg.addAnswer(.nsec3);
     try a.name.fromString("example.com");
-    a.rdata.a.addr = std.net.Ip4Address.init(.{ 5, 6, 7, 8 }, 0);
+    a.rdata.nsec3.hash_algorithm = .sha224;
+    a.rdata.nsec3.flags = 244;
+    a.rdata.nsec3.iterations = 22;
+    a.rdata.nsec3.salt_len = 5;
+    a.rdata.nsec3.salt = try std.ArrayList(u8).initCapacity(alloc, 5);
+    a.rdata.nsec3.salt.appendSliceAssumeCapacity("12345");
+    a.rdata.nsec3.hash_len = 6;
+    a.rdata.nsec3.hash = try std.ArrayList(u8).initCapacity(alloc, 6);
+    a.rdata.nsec3.hash.appendSliceAssumeCapacity("123456");
+    a.rdata.nsec3.type_bitmap = try std.ArrayList(u8).initCapacity(alloc, 12);
+    a.rdata.nsec3.type_bitmap.appendSliceAssumeCapacity("LSKDJFOISDFH");
+
     a.ttl = 120;
     a.rdlength = a.rdata.getLen();
 

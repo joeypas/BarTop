@@ -291,7 +291,7 @@ pub const StubResolver = struct {
         defer packet.deinit();
         try createDnsResponse(&response_packet, &packet);
 
-        log.debug("Received DNS Packet: {any}", .{packet.header});
+        log.debug("Received DNS Packet:\n{s}", .{packet});
 
         for (packet.questions.items) |*question| {
             var qname_buf: [BUFFER_SIZE]u8 = undefined;
@@ -330,6 +330,8 @@ pub const StubResolver = struct {
                 try user_data.dns_cache.put(qname_hash, res);
             }
         }
+
+        log.debug("Sending DNS Packet:\n{s}", .{response_packet});
         return response_packet.encode(fbw.writer().any());
     }
 };

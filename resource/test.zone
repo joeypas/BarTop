@@ -1,15 +1,15 @@
 $ORIGIN example.com.
 $TTL 3600
 @             IN  SOA   ns.example.com. username.example.com. ( 2020091025 7200 3600 1209600 3600 )
-              IN  NS    ns                    
-              IN  NS    ns.somewhere.example. 
-              IN  MX    mail.example.com.  
-              IN  MX    mail2.example.com. 
-              IN  MX    mail3              
+              IN  NS    ns.example.com.
+              IN  NS    ns.somewhere.example.
+              IN  MX    10 mail.example.com.
+              IN  MX    20 mail2.example.com. 
+              IN  MX    50 mail3
               IN  A     192.0.2.1             
 ns            IN  A     192.0.2.2             
-www           3400  IN  CNAME example.com.          
-wwwtest       IN  CNAME www                   
+www           IN  CNAME example.com.          
+wwwtest       IN  CNAME example.com.                   
 mail          IN  A     192.0.2.3             
 mail2         IN  A     192.0.2.4             
 mail3         IN  A     192.0.2.5             
