@@ -162,7 +162,7 @@ pub const Name = struct {
     }
 
     /// Given a string representation of a Domain Name, split into labels and add to internal list
-    pub fn fromString(self: *Name, name: []const u8) !void {
+    pub fn parse(self: *Name, name: []const u8) !void {
         var itr = std.mem.splitAny(u8, name, ". ");
 
         while (itr.next()) |part| {
@@ -178,7 +178,7 @@ pub const Name = struct {
     pub fn initString(allocator: Allocator, name: []const u8) !Name {
         var ret = Name.init(allocator);
         errdefer ret.deinit();
-        try ret.fromString(name);
+        try ret.parse(name);
         return ret;
     }
 };

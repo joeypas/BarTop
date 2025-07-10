@@ -13,7 +13,7 @@ test "name encode/decode" {
     var name = Message.Name.init(alloc);
     defer name.deinit();
 
-    try name.fromString("example.com");
+    try name.parse("example.com");
     try std.testing.expectEqual(@as(u16, 13), name.getLen());
 
     var buf: [64]u8 = undefined;
@@ -68,7 +68,7 @@ test "record encode/decode" {
     var record = Message.Record.init(alloc, .a);
     defer record.deinit();
 
-    try record.name.fromString("example.com");
+    try record.name.parse("example.com");
     record.ttl = 60;
     record.rdata.a.addr = std.net.Ip4Address.init(.{ 1, 2, 3, 4 }, 0);
     record.rdlength = record.rdata.getLen();
@@ -103,11 +103,11 @@ test "message encode/decode" {
     msg.header.an_count = 1;
 
     const q = try msg.addQuestion();
-    try q.qname.fromString("example.com");
+    try q.qname.parse("example.com");
     q.qtype = .nsec3;
 
     const a = try msg.addAnswer(.nsec3);
-    try a.name.fromString("example.com");
+    try a.name.parse("example.com");
     a.rdata.nsec3.hash_algorithm = .sha224;
     a.rdata.nsec3.flags = 244;
     a.rdata.nsec3.iterations = 22;

@@ -67,7 +67,7 @@ pub fn main() !void {
     };
 
     const question = try message.addQuestion();
-    try question.qname.fromString(qname);
+    try question.qname.parse(qname);
     question.*.qtype = .ns;
     question.*.qclass = .in;
 

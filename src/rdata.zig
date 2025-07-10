@@ -118,29 +118,23 @@ fn getLenRData(comptime T: type, data: *T) u16 {
     }
 }
 
-fn rdataFromString(comptime T: type, comptime tag: Type, allocator: Allocator, data: []const u8) !RData {
-    var ret: T = undefined;
+fn rdataFromString(comptime T: type, self: *T, data: []const u8) !void {
     var tokens = std.mem.tokenizeAny(u8, data, " \t");
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
-                if (std.mem.startsWith(u8, field.name, "_")) {} else if (std.meta.hasFn(field.type, "initString")) {
-                    @field(ret, field.name) = try field.type.initString(allocator, tokens.next() orelse return error.MissingData);
+                if (std.mem.startsWith(u8, field.name, "_")) {} else if (std.meta.hasFn(field.type, "parse")) {
+                    try @field(self, field.name).parse(tokens.next() orelse return error.MissingData);
                 } else if (@typeInfo(field.type) == .int) {
-                    @field(ret, field.name) = try std.fmt.parseInt(field.type, tokens.next() orelse return error.MissingData, 10);
+                    @field(self, field.name) = try std.fmt.parseInt(field.type, tokens.next() orelse return error.MissingData, 10);
                 } else if (@typeInfo(field.type) == .@"enum") {
-                    @field(ret, field.name) = @enumFromInt(try std.fmt.parseInt(@typeInfo(field.type).@"enum".tag_type, tokens.next() orelse return error.MissingData, 10));
+                    @field(self, field.name) = @enumFromInt(try std.fmt.parseInt(@typeInfo(field.type).@"enum".tag_type, tokens.next() orelse return error.MissingData, 10));
                 } else if (field.type == ArrayList(u8)) {
-                    var array = ArrayList(u8).init(allocator);
-
                     while (tokens.next()) |token| {
-                        try array.appendSlice(token);
+                        try @field(self, field.name).appendSlice(token);
                     }
-
-                    @field(ret, field.name) = array;
                 }
             }
-            return @unionInit(RData, @tagName(tag), ret);
         },
         else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
     }
@@ -333,28 +327,13 @@ pub const RData = union(Type) {
         }
     }
 
-    pub fn fromString(@"type": Type, allocator: Allocator, data: []const u8) !RData {
+    pub fn parse(self: *RData, data: []const u8) !void {
         const dat = std.mem.trim(u8, data, " \t\n\r");
-        return switch (@"type") {
-            inline .cname,
-            .ns,
-            .ptr,
-            .mx,
-            .txt,
-            .soa,
-            .srv,
-            .dnskey,
-            .ds,
-            .sig,
-            .nsec3,
-            => |t| rdataFromString(std.meta.TagPayload(RData, t), t, allocator, dat),
-            .a => RData{ .a = .{ .addr = try std.net.Ip4Address.parse(dat, 0) } },
-            .aaaa => RData{ .aaaa = .{ .addr = try std.net.Ip6Address.parse(dat, 0) } },
-            else => {
-                var list = try ArrayList(u8).initCapacity(allocator, dat.len);
-                list.appendSliceAssumeCapacity(dat);
-                return RData{ .data = list };
-            },
+        return switch (self.*) {
+            .a => |*a| a.addr = try std.net.Ip4Address.parse(dat, 0),
+            .aaaa => |*aaaa| aaaa.addr = try std.net.Ip6Address.parse(dat, 0),
+            .data => |*list| try list.appendSlice(dat),
+            inline else => |*case| rdataFromString(@TypeOf(case.*), case, dat),
         };
     }
 
