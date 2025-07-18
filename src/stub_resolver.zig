@@ -13,10 +13,9 @@ const CompletionPool = std.heap.MemoryPool(xev.Completion);
 const StatePool = std.heap.MemoryPool(UDP.State);
 
 // TODO: For the whole project
-// 1. Implement Timeout/backup server to ask if timeout is too long
-// 2. Validate Messages
-// 3. Return correct errors when we encounter one
-// 4. Async reads/writes when querying external server
+// 1. Any resolver implemetations will now be stale since zig will be adding async,
+// so any implementations will need a rewrite once that is available
+// 2. Decide on a common api and naming for functions
 
 // Logging setup
 const level: std.log.Level = switch (@import("builtin").mode) {
@@ -41,6 +40,7 @@ pub const Options = struct {
     external_server: ?[]const u8 = null,
     bind_addr: []const u8 = "127.0.0.1",
     bind_port: u16 = 53,
+    recursive: bool = true,
 };
 
 const xev = @import("xev");
@@ -60,8 +60,9 @@ pub const StubResolver = struct {
     completion_pool: CompletionPool,
     state_pool: StatePool,
     arena: std.heap.ArenaAllocator,
+    thread_pool: ?*xev.ThreadPool,
 
-    pub fn init(allocator: Allocator, comptime options: Options) !StubResolver {
+    pub fn init(allocator: Allocator, thread_pool: ?*xev.ThreadPool, comptime options: Options) !StubResolver {
         const addr = try net.Address.parseIp(options.bind_addr, options.bind_port);
         const resolv = try getResolv(
             allocator,
@@ -80,6 +81,7 @@ pub const StubResolver = struct {
             .completion_pool = CompletionPool.init(allocator),
             .state_pool = StatePool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
+            .thread_pool = thread_pool,
         };
     }
 
@@ -101,10 +103,7 @@ pub const StubResolver = struct {
         // Send signal to main thread to show we are done
         defer dns_condition.signal();
 
-        var thread_pool = xev.ThreadPool.init(.{});
-        defer thread_pool.deinit();
-        defer thread_pool.shutdown();
-        var loop = try xev.Loop.init(.{ .thread_pool = &thread_pool });
+        var loop = try xev.Loop.init(.{ .thread_pool = self.thread_pool });
         defer loop.deinit();
 
         try self.udp.bind(self.bind_addr);
@@ -476,10 +475,13 @@ pub fn run() !void {
     const allocator = gpa.allocator();
     const stdin = std.io.getStdIn().reader();
 
+    var thread_pool = xev.ThreadPool.init(.{});
+
     var server = try StubResolver.init(
         allocator,
+        &thread_pool,
         .{
-            .bind_port = 53,
+            .bind_port = 5533,
             .external_server = "8.8.8.8",
         },
     );
@@ -506,6 +508,8 @@ pub fn run() !void {
 
     dns_mutex.lock();
     dns_condition.wait(&dns_mutex);
+    thread_pool.shutdown();
+    thread_pool.deinit();
     dns_mutex.unlock();
     main_thread.join();
 }

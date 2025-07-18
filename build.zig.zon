@@ -24,15 +24,15 @@
     // internet connectivity.
     .dependencies = .{
         .openssl = .{
-            .url = "git+https://github.com/dzfrias/openssl-zig?ref=main#bfc41fced139b1bc820c819dbc9a5784498ffef3",
-            .hash = "openssl-3.4.0-AAAAAJbeAABDKzRsuNqkIz475RzzA6y5o1R-LoEZumHo",
+            .url = "git+https://github.com/dzfrias/openssl-zig#2fbf20e414d6e09f1e1a30a5a831cf4aad87a2b6",
+            .hash = "openssl-3.4.0-YymhPpDhAABAHYWqHr3POORyDXLqD_UhTTN6sMfxcHdl",
         },
         .libxev = .{
-            .url = "git+https://github.com/mitchellh/libxev?ref=main#58507577fc87b89471809a1a23415bee1d81814d",
-            .hash = "libxev-0.0.0-86vtc87kEgBxgbJ1RI1R6Elynb7zydCgNR8dt3uw01My",
+            .url = "git+https://github.com/mitchellh/libxev#52af1e67c14f5d3a4b8ed64d60b09de76b0b9b29",
+            .hash = "libxev-0.0.0-86vtcxMBEwDSASHqIPjQiAfOrSU4zzlesK0kl98Vw8S3",
         },
         .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap?ref=master#cc5c6a5d71a317ed4b0ad776842d1d0655f72d0a",
+            .url = "git+https://github.com/Hejsil/zig-clap#cc5c6a5d71a317ed4b0ad776842d1d0655f72d0a",
             .hash = "clap-0.10.0-oBajB7jkAQAZ4cKLlzkeV9mDu2yGZvtN2QuOyfAfjBij",
         },
     },

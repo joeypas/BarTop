@@ -8,7 +8,31 @@ const ArrayList = std.ArrayList;
 const Name = rr.Name;
 const Type = rr.Type;
 
-fn initRData(T: type, comptime tag: Type, allocator: Allocator) RData {
+pub const RType = enum(u16) {
+    a = 1,
+    ns = 2,
+    cname = 5,
+    soa = 6,
+    ptr = 12,
+    mx = 15,
+    txt = 16,
+    aaaa = 28,
+    srv = 33,
+    //opt = 41,
+    rrsig = 46,
+    //nsec = 47,
+    dnskey = 48,
+    ds = 43,
+    sig = 24,
+    nsec3 = 50,
+    //ixfr = 251,
+    //axfr = 252,
+    //any = 255,
+    //caa = 257,
+    data = 0,
+};
+
+fn initRData(T: type, comptime tag: RType, allocator: Allocator) RData {
     var ret: T = undefined;
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -38,7 +62,7 @@ fn deinitRData(comptime T: type, data: *T) void {
     }
 }
 
-fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, size: usize, buffered_reader: *Reader) !RData {
+fn decodeRData(T: type, comptime tag: RType, allocator: Allocator, size: usize, buffered_reader: *Reader) !RData {
     var ret: T = undefined;
     var reader = buffered_reader.reader();
     switch (@typeInfo(T)) {
@@ -165,7 +189,7 @@ pub fn formatRData(comptime T: type, data: T, comptime fmt: []const u8, options:
     }
 }
 
-pub const RData = union(Type) {
+pub const RData = union(RType) {
     // TODO:
     // 1. Implement printing support
     // 2. Full rdata type support
@@ -206,6 +230,7 @@ pub const RData = union(Type) {
         port: u16,
         target: Name,
     },
+    rrsig: DNSSEC.Sig,
     dnskey: DNSSEC.DnsKey,
     ds: DNSSEC.DS,
     sig: DNSSEC.Sig,
@@ -213,22 +238,11 @@ pub const RData = union(Type) {
     data: ArrayList(u8),
 
     pub fn init(allocator: Allocator, @"type": Type) RData {
-        return switch (@"type") {
-            inline .cname,
-            .ns,
-            .ptr,
-            .mx,
-            .txt,
-            .soa,
-            .srv,
-            .dnskey,
-            .ds,
-            .sig,
-            .nsec3,
-            => |t| return initRData(std.meta.TagPayload(RData, t), t, allocator),
+        return switch (getType(@"type")) {
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
-            else => RData{ .data = ArrayList(u8).init(allocator) },
+            .data => RData{ .data = ArrayList(u8).init(allocator) },
+            inline else => |t| initRData(std.meta.TagPayload(RData, t), t, allocator),
         };
     }
 
@@ -239,33 +253,27 @@ pub const RData = union(Type) {
         }
     }
 
+    fn getType(@"type": Type) RType {
+        const ret = std.meta.intToEnum(RType, @intFromEnum(@"type")) catch RType.data;
+        return ret;
+    }
+
     pub fn decode(allocator: Allocator, @"type": Type, size: usize, buffered_reader: *Reader) !RData {
         var reader = buffered_reader.reader();
-        switch (@"type") {
-            inline .cname,
-            .ns,
-            .ptr,
-            .mx,
-            .txt,
-            .soa,
-            .srv,
-            .dnskey,
-            .sig,
-            .nsec3,
-            => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, buffered_reader),
-            Type.a => {
+        switch (getType(@"type")) {
+            .a => {
                 var data: [4]u8 = undefined;
                 _ = try reader.read(&data);
                 return RData{ .a = .{
                     .addr = std.net.Ip4Address.init(data, 0),
                 } };
             },
-            Type.aaaa => {
+            .aaaa => {
                 var data: [16]u8 = undefined;
                 _ = try reader.read(&data);
                 return RData{ .aaaa = .{ .addr = std.net.Ip6Address.init(data, 0, 0, 0) } };
             },
-            Type.ds => {
+            .ds => {
                 const key_tag = try reader.readInt(u16, .big);
                 const algorithm: DNSSEC.Algorithm = @enumFromInt(try reader.readByte());
                 const digest_type: DNSSEC.DigestType = @enumFromInt(try reader.readByte());
@@ -293,13 +301,14 @@ pub const RData = union(Type) {
                     .digest = digest,
                 } };
             },
-            else => {
+            .data => {
                 var array = try ArrayList(u8).initCapacity(allocator, size);
                 errdefer array.deinit();
                 try reader.readAllArrayList(&array, size);
 
                 return RData{ .data = array };
             },
+            inline else => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, buffered_reader),
         }
     }
 
