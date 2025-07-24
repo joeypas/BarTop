@@ -4,13 +4,12 @@ const net = std.net;
 const fs = std.fs;
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
-const Thread = std.Thread;
 const Mutex = std.Thread.Mutex;
 const AtomicValue = std.atomic.Value;
 const AutoHashMap = std.AutoHashMap;
 const LRU = @import("util/cache.zig").LRU;
-const CompletionPool = std.heap.MemoryPool(xev.Completion);
-const StatePool = std.heap.MemoryPool(UDP.State);
+const CompletionPool = std.heap.MemoryPoolExtra(xev.Completion, .{ .alignment = @alignOf(xev.Completion) });
+const StatePool = std.heap.MemoryPoolExtra(UDP.State, .{ .alignment = @alignOf(UDP.State) });
 
 // TODO: For the whole project
 // 1. Implement Timeout/backup server to ask if timeout is too long
@@ -34,7 +33,7 @@ const READ_TIMEOUT_MS = 6000;
 
 // Global vars (for thread sync)
 var dns_mutex = Mutex{};
-var dns_condition = Thread.Condition{};
+var dns_condition = std.Thread.Condition{};
 var running = AtomicValue(bool).init(false);
 
 pub const Options = struct {
@@ -53,15 +52,25 @@ pub const StubResolver = struct {
     bind_addr: net.Address,
     resolv: []const u8,
     udp: UDP,
+    loop: xev.Loop,
     timer: xev.Timer,
     c_read: xev.Completion = undefined,
-    c_write: xev.Completion = undefined,
     c_timer: xev.Completion = undefined,
     completion_pool: CompletionPool,
     state_pool: StatePool,
     arena: std.heap.ArenaAllocator,
+    thread_pool: xev.ThreadPool,
 
     pub fn init(allocator: Allocator, comptime options: Options) !StubResolver {
+        var thread_pool = xev.ThreadPool.init(.{});
+        errdefer thread_pool.deinit();
+
+        var loop = try xev.Loop.init(.{ .thread_pool = &thread_pool });
+        errdefer loop.deinit();
+
+        var timer = try xev.Timer.init();
+        errdefer timer.deinit();
+
         const addr = try net.Address.parseIp(options.bind_addr, options.bind_port);
         const resolv = try getResolv(
             allocator,
@@ -69,21 +78,27 @@ pub const StubResolver = struct {
         );
         errdefer allocator.free(resolv);
 
+        const udp = try UDP.init(addr);
+
         return .{
             .allocator = allocator,
             .dns_cache = LRU(Message.Message).init(allocator, 512),
             .bind_addr = addr,
             .options = options,
             .resolv = resolv,
-            .udp = try UDP.init(addr),
-            .timer = try xev.Timer.init(),
+            .udp = udp,
+            .loop = loop,
+            .timer = timer,
             .completion_pool = CompletionPool.init(allocator),
             .state_pool = StatePool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
+            .thread_pool = thread_pool,
         };
     }
 
     pub fn deinit(self: *StubResolver) void {
+        self.loop.deinit();
+        self.thread_pool.deinit();
         self.arena.deinit();
         self.allocator.free(self.resolv);
         self.completion_pool.deinit();
@@ -101,23 +116,15 @@ pub const StubResolver = struct {
         // Send signal to main thread to show we are done
         defer dns_condition.signal();
 
-        var thread_pool = xev.ThreadPool.init(.{});
-        defer thread_pool.deinit();
-        defer thread_pool.shutdown();
-        var loop = try xev.Loop.init(.{ .thread_pool = &thread_pool });
-        defer loop.deinit();
-
         try self.udp.bind(self.bind_addr);
         log.info("Listen on {any}", .{self.bind_addr});
 
-        while (running.load(.acquire)) {
-            try self.read(&loop);
-            self.timer.run(&loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
-            try loop.run(.once);
-        }
+        try self.read(&self.loop);
+        self.timer.run(&self.loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
+        try self.loop.run(.until_done);
 
-        loop.stop();
-        self.udp.close(&loop, &self.c_read, void, null, (struct {
+        self.loop.stop();
+        self.udp.close(&self.loop, &self.c_read, void, null, (struct {
             fn callback(
                 _: ?*void,
                 _: *xev.Loop,
@@ -130,7 +137,8 @@ pub const StubResolver = struct {
             }
         }).callback);
 
-        try loop.run(.until_done);
+        try self.loop.run(.until_done);
+        self.thread_pool.shutdown();
     }
 
     // We need this to run once every second to update ttl values, and remove
@@ -142,7 +150,7 @@ pub const StubResolver = struct {
     // but thats also in the hot path so idk
     fn timerCallback(
         self_: ?*StubResolver,
-        _: *xev.Loop,
+        loop: *xev.Loop,
         _: *xev.Completion,
         result: xev.Timer.RunError!void,
     ) xev.CallbackAction {
@@ -157,7 +165,6 @@ pub const StubResolver = struct {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
-                    return .disarm;
                 }
                 item.ttl -= 1;
             }
@@ -165,7 +172,6 @@ pub const StubResolver = struct {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
-                    return .disarm;
                 }
                 item.ttl -= 1;
             }
@@ -173,23 +179,28 @@ pub const StubResolver = struct {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
-                    return .disarm;
                 }
                 item.ttl -= 1;
             }
         }
+
+        if (running.load(.acquire)) {
+            self.timer.run(loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
+        }
+
         return .disarm;
     }
 
     pub fn read(self: *StubResolver, loop: *xev.Loop) !void {
-        var recv_buf: [BUFFER_SIZE]u8 = undefined;
+        var allocator = self.arena.allocator();
+        var recv_buf = try allocator.alloc(u8, BUFFER_SIZE);
         const c_read = try self.completion_pool.create();
         const s_read = try self.state_pool.create();
         self.udp.read(
             loop,
             c_read,
             s_read,
-            .{ .slice = &recv_buf },
+            .{ .slice = recv_buf[0..] },
             StubResolver,
             self,
             readCallback,
@@ -200,8 +211,6 @@ pub const StubResolver = struct {
         self: *StubResolver,
         loop: *xev.Loop,
         addr: net.Address,
-        c: *xev.Completion,
-        s: *UDP.State,
         buf: []u8,
     ) !void {
         var allocator = self.arena.allocator();
@@ -212,12 +221,14 @@ pub const StubResolver = struct {
             response_buf,
         );
 
+        const c_write = try self.completion_pool.create();
+        const s_write = try self.state_pool.create();
         response_buf = try allocator.realloc(response_buf, len);
 
         self.udp.write(
             loop,
-            c,
-            s,
+            c_write,
+            s_write,
             addr,
             .{ .slice = response_buf },
             StubResolver,
@@ -246,7 +257,7 @@ pub const StubResolver = struct {
     // Callback for after reading from socket
     fn readCallback(
         ud: ?*StubResolver,
-        loop: *xev.Loop,
+        _: *xev.Loop,
         c: *xev.Completion,
         s: *xev.UDP.State,
         addr: net.Address,
@@ -259,10 +270,19 @@ pub const StubResolver = struct {
             return .rearm;
         };
         if (ud) |user_data| {
-            user_data.write(loop, addr, c, s, buf.slice[0..len]) catch |err| {
+            if (running.load(.acquire)) {
+                user_data.read(&user_data.loop) catch |err| {
+                    log.err("Error in read: {}\n", .{err});
+                    return .rearm;
+                };
+            }
+            user_data.completion_pool.destroy(c);
+            user_data.state_pool.destroy(s);
+            user_data.write(&user_data.loop, addr, buf.slice[0..len]) catch |err| {
                 log.err("Error in write: {}\n", .{err});
-                return .rearm;
+                return .disarm;
             };
+            user_data.arena.allocator().free(buf.slice);
         }
 
         return xev.CallbackAction.disarm;
@@ -479,13 +499,13 @@ pub fn run() !void {
     var server = try StubResolver.init(
         allocator,
         .{
-            .bind_port = 53,
+            .bind_port = 5533,
             .external_server = "8.8.8.8",
         },
     );
     defer server.deinit();
 
-    var main_thread = try Thread.spawn(
+    var main_thread = try std.Thread.spawn(
         .{},
         StubResolver.handle,
         .{&server},
