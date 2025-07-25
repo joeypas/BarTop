@@ -5,11 +5,8 @@ const fs = std.fs;
 const posix = std.posix;
 const Allocator = std.mem.Allocator;
 const Mutex = std.Thread.Mutex;
-const AtomicValue = std.atomic.Value;
 const AutoHashMap = std.AutoHashMap;
 const LRU = @import("util/cache.zig").LRU;
-const CompletionPool = std.heap.MemoryPoolExtra(xev.Completion, .{ .alignment = @alignOf(xev.Completion) });
-const StatePool = std.heap.MemoryPoolExtra(UDP.State, .{ .alignment = @alignOf(UDP.State) });
 
 // TODO: For the whole project
 // 1. Implement Timeout/backup server to ask if timeout is too long
@@ -38,33 +35,39 @@ pub const Options = struct {
     external_server: ?[]const u8 = null,
     bind_addr: []const u8 = "127.0.0.1",
     bind_port: u16 = 53,
+    thread_count: usize = 8,
 };
 
 const xev = @import("xev");
 const UDP = xev.UDP;
 
 const AsyncContext = struct {
-    self: *StubResolver,
+    self: *Thread,
     question: Message.Message,
     message: Message.Message,
     addr: std.net.Address,
+    recv_buf: [BUFFER_SIZE]u8 = undefined,
+    send_buf: [BUFFER_SIZE]u8 = undefined,
+    state: UDP.State = undefined,
+    completion: xev.Completion = .{},
+    wait_completion: xev.Completion = .{},
 };
 
 const ExternalContext = struct {
-    self: *StubResolver,
+    self: *Thread,
     qname_hash: u64,
     message: *Message.Message,
     recv_buf: [BUFFER_SIZE]u8 = undefined,
     send_buf: [BUFFER_SIZE]u8 = undefined,
+    state: UDP.State = undefined,
+    completion: xev.Completion = .{},
 };
 
 const ContextPool = std.heap.MemoryPoolExtra(AsyncContext, .{ .alignment = @alignOf(AsyncContext) });
 
 const ExtContextPool = std.heap.MemoryPoolExtra(ExternalContext, .{ .alignment = @alignOf(ExternalContext) });
 
-pub const StubResolver = struct {
-    options: Options,
-    allocator: Allocator,
+pub const Thread = struct {
     dns_cache: LRU(Message.Message),
     bind_addr: net.Address,
     resolv: net.Address,
@@ -77,14 +80,12 @@ pub const StubResolver = struct {
     timer: xev.Timer,
     c_read: xev.Completion = undefined,
     c_timer: xev.Completion = undefined,
-    completion_pool: CompletionPool,
-    state_pool: StatePool,
     context_pool: ContextPool,
     ext_context_pool: ExtContextPool,
     arena: std.heap.ArenaAllocator,
     thread_pool: xev.ThreadPool,
 
-    pub fn init(allocator: Allocator, comptime options: Options) !StubResolver {
+    pub fn init(allocator: Allocator, options: Options) !Thread {
         var thread_pool = xev.ThreadPool.init(.{});
         errdefer thread_pool.deinit();
 
@@ -107,10 +108,8 @@ pub const StubResolver = struct {
         const ext_udp = try UDP.init(addr);
 
         return .{
-            .allocator = allocator,
-            .dns_cache = LRU(Message.Message).init(allocator, 512),
+            .dns_cache = LRU(Message).init(allocator, 512),
             .bind_addr = addr,
-            .options = options,
             .resolv = resolv,
             .udp = udp,
             .ext_udp = ext_udp,
@@ -118,8 +117,6 @@ pub const StubResolver = struct {
             .shutdown_notifier = shutdown_notifier,
             .loop = loop,
             .timer = timer,
-            .completion_pool = CompletionPool.init(allocator),
-            .state_pool = StatePool.init(allocator),
             .context_pool = ContextPool.init(allocator),
             .ext_context_pool = ExtContextPool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
@@ -127,36 +124,38 @@ pub const StubResolver = struct {
         };
     }
 
-    pub fn deinit(self: *StubResolver) void {
+    pub fn deinit(self: *Thread) void {
+        self.dns_cache.deinit();
+        self.context_pool.deinit();
+        self.ext_context_pool.deinit();
         self.notifier.deinit();
         self.shutdown_notifier.deinit();
         self.loop.deinit();
         self.thread_pool.deinit();
         self.arena.deinit();
-        self.completion_pool.deinit();
-        self.state_pool.deinit();
-        self.context_pool.deinit();
-        self.ext_context_pool.deinit();
-        self.dns_cache.deinit();
     }
 
-    pub fn handle(self: *StubResolver) void {
+    pub fn handle(self: *Thread, id: usize) void {
         self.start() catch |err| {
-            log.err("Error in server run: {}", .{err});
+            log.err("Error in Thread {d} run: {}", .{ id, err });
         };
     }
 
-    pub fn start(self: *StubResolver) !void {
+    pub fn start(self: *Thread) !void {
         try self.udp.bind(self.bind_addr);
         log.info("Listen on {any}", .{self.bind_addr});
 
-        try self.read(&self.loop);
-        self.timer.run(&self.loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
-        self.shutdown_notifier.wait(&self.loop, &self.c_shutdown, StubResolver, self, stopCallback);
+        try self.read();
+        self.timer.run(&self.loop, &self.c_timer, 1000, Thread, self, timerCallback);
+        self.shutdown_notifier.wait(&self.loop, &self.c_shutdown, Thread, self, stopCallback);
         try self.loop.run(.until_done);
     }
 
-    pub fn stop(self: *StubResolver) !void {
+    pub fn notifyShutdown(self: *Thread) !void {
+        try self.shutdown_notifier.notify();
+    }
+
+    fn stop(self: *Thread) !void {
         self.udp.close(&self.loop, &self.c_read, void, null, (struct {
             fn callback(
                 _: ?*void,
@@ -191,7 +190,7 @@ pub const StubResolver = struct {
     }
 
     fn stopCallback(
-        ud: ?*StubResolver,
+        ud: ?*Thread,
         _: *xev.Loop,
         _: *xev.Completion,
         r: xev.Async.WaitError!void,
@@ -212,22 +211,24 @@ pub const StubResolver = struct {
     // and update ttl/remove stale records when theres a cache hit
     // but thats also in the hot path so idk
     fn timerCallback(
-        self_: ?*StubResolver,
+        self_: ?*Thread,
         loop: *xev.Loop,
         _: *xev.Completion,
         result: xev.Timer.RunError!void,
     ) xev.CallbackAction {
         var self = self_.?;
-        _ = result catch unreachable;
+        _ = result catch return .rearm;
 
         var itr = self.dns_cache.map.valueIterator();
 
         while (itr.next()) |value| {
-            for (0..value.*.value.answers.items.len) |i| {
-                var item = &value.*.value.answers.items[i];
+            for (value.*.value.answers.items) |*item| {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
+                    self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
+
+                    return .disarm;
                 }
                 item.ttl -= 1;
             }
@@ -235,6 +236,9 @@ pub const StubResolver = struct {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
+                    self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
+
+                    return .disarm;
                 }
                 item.ttl -= 1;
             }
@@ -242,28 +246,29 @@ pub const StubResolver = struct {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
+                    self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
+
+                    return .disarm;
                 }
                 item.ttl -= 1;
             }
         }
 
-        self.timer.run(loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
+        self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
 
         return .disarm;
     }
 
-    pub fn read(self: *StubResolver, loop: *xev.Loop) !void {
-        const allocator = self.arena.allocator();
-        var recv_buf = try allocator.alloc(u8, BUFFER_SIZE);
-        const c_read = try self.completion_pool.create();
-        const s_read = try self.state_pool.create();
+    fn read(self: *Thread) !void {
+        var context = try self.context_pool.create();
+        context.self = self;
         self.udp.read(
-            loop,
-            c_read,
-            s_read,
-            .{ .slice = recv_buf[0..] },
-            StubResolver,
-            self,
+            &self.loop,
+            &context.completion,
+            &context.state,
+            .{ .slice = context.recv_buf[0..] },
+            AsyncContext,
+            context,
             readCallback,
         );
     }
@@ -271,16 +276,18 @@ pub const StubResolver = struct {
     fn asyncCallback(
         ud: ?*AsyncContext,
         _: *xev.Loop,
-        c: *xev.Completion,
+        _: *xev.Completion,
         r: xev.Async.WaitError!void,
     ) xev.CallbackAction {
-        _ = r catch unreachable;
+        _ = r catch |err| {
+            log.err("Error in async callback: {}", .{err});
+            return .rearm;
+        };
         if (ud) |context| {
             write(context) catch |err| {
                 log.err("Error in write: {}", .{err});
                 return .disarm;
             };
-            context.self.completion_pool.destroy(c);
         }
         return .disarm;
     }
@@ -288,45 +295,36 @@ pub const StubResolver = struct {
     fn write(context: *AsyncContext) !void {
         var self = context.self;
         var message = context.message;
-        var allocator = self.arena.allocator();
 
-        var response = try allocator.alloc(u8, BUFFER_SIZE);
-        var fbw = std.io.fixedBufferStream(response);
+        var fbw = std.io.fixedBufferStream(&context.send_buf);
 
         const len = try message.encode(fbw.writer().any());
-
-        response = try allocator.realloc(response, len);
-
-        const c_write = try self.completion_pool.create();
-        const s_write = try self.state_pool.create();
 
         const addr = context.addr;
 
         self.udp.write(
             &self.loop,
-            c_write,
-            s_write,
+            &context.completion,
+            &context.state,
             addr,
-            .{ .slice = response },
+            .{ .slice = context.send_buf[0..len] },
             AsyncContext,
             context,
             (struct {
                 fn callback(
                     user_data: ?*AsyncContext,
                     _: *xev.Loop,
-                    cw: *xev.Completion,
-                    sw: *UDP.State,
+                    _: *xev.Completion,
+                    _: *UDP.State,
                     _: UDP,
-                    buff: xev.WriteBuffer,
+                    _: xev.WriteBuffer,
                     r: xev.WriteError!usize,
                 ) xev.CallbackAction {
-                    _ = r catch unreachable;
+                    _ = r catch |err| {
+                        log.err("Error writing to client: {}", .{err});
+                        return .rearm;
+                    };
                     const server = user_data.?;
-                    server.self.arena.allocator().free(buff.slice);
-                    server.self.completion_pool.destroy(cw);
-                    server.self.state_pool.destroy(sw);
-                    server.question.deinit();
-                    server.message.deinit();
                     server.self.context_pool.destroy(server);
                     return .disarm;
                 }
@@ -334,22 +332,16 @@ pub const StubResolver = struct {
         );
     }
 
-    pub fn handlePacket(
-        self: *StubResolver,
-        loop: *xev.Loop,
-        addr: net.Address,
+    fn handlePacket(
+        self: *Thread,
+        context: *AsyncContext,
         buf: []u8,
     ) !void {
         const allocator = self.arena.allocator();
-        const context = try self.context_pool.create();
         var fbr = std.io.fixedBufferStream(buf);
 
-        context.* = AsyncContext{
-            .self = self,
-            .question = try Message.Message.decode(allocator, fbr.reader().any()),
-            .message = Message.Message.init(allocator),
-            .addr = addr,
-        };
+        context.question = try Message.Message.decode(allocator, fbr.reader().any());
+        context.message = Message.Message.init(allocator);
         context.message.ref = true;
 
         errdefer context.question.deinit();
@@ -357,8 +349,7 @@ pub const StubResolver = struct {
         errdefer self.context_pool.destroy(context);
 
         try createDnsResponse(&context.message, &context.question);
-        const c_wait = try self.completion_pool.create();
-        self.notifier.wait(loop, c_wait, AsyncContext, context, asyncCallback);
+        self.notifier.wait(&self.loop, &context.wait_completion, AsyncContext, context, asyncCallback);
 
         try handleDnsQuery(
             self,
@@ -370,10 +361,10 @@ pub const StubResolver = struct {
 
     // Callback for after reading from socket
     fn readCallback(
-        ud: ?*StubResolver,
+        ud: ?*AsyncContext,
         _: *xev.Loop,
-        c: *xev.Completion,
-        s: *xev.UDP.State,
+        _: *xev.Completion,
+        _: *xev.UDP.State,
         addr: net.Address,
         _: UDP,
         buf: xev.ReadBuffer,
@@ -384,24 +375,22 @@ pub const StubResolver = struct {
             return .rearm;
         };
         if (ud) |user_data| {
-            user_data.read(&user_data.loop) catch |err| {
+            user_data.self.read() catch |err| {
                 log.err("Error in read: {}\n", .{err});
                 return .rearm;
             };
-            user_data.completion_pool.destroy(c);
-            user_data.state_pool.destroy(s);
-            user_data.handlePacket(&user_data.loop, addr, buf.slice[0..len]) catch |err| {
+            user_data.addr = addr;
+            user_data.self.handlePacket(user_data, buf.slice[0..len]) catch |err| {
                 log.err("Error in write: {}\n", .{err});
                 return .disarm;
             };
-            user_data.arena.allocator().free(buf.slice);
         }
 
         return xev.CallbackAction.disarm;
     }
 
     fn handleDnsQuery(
-        self: *StubResolver,
+        self: *Thread,
         query: []const u8,
         response: *Message.Message,
         packet: *Message.Message,
@@ -431,8 +420,6 @@ pub const StubResolver = struct {
                 try glue(response, cached_response.*);
             } else {
                 log.debug("Not found in local store, querying external server...", .{});
-                const c_ext = try self.completion_pool.create();
-                const s_ext = try self.state_pool.create();
                 const ext_context = try self.ext_context_pool.create();
                 ext_context.* = ExternalContext{
                     .self = self,
@@ -442,8 +429,8 @@ pub const StubResolver = struct {
                 @memcpy(ext_context.send_buf[0..query.len], query);
                 self.ext_udp.write(
                     &self.loop,
-                    c_ext,
-                    s_ext,
+                    &ext_context.completion,
+                    &ext_context.state,
                     self.resolv,
                     .{ .slice = ext_context.send_buf[0..query.len] },
                     ExternalContext,
@@ -468,7 +455,7 @@ pub const StubResolver = struct {
     ) xev.CallbackAction {
         _ = r catch |err| {
             log.err("Error in External Write: {}", .{err});
-            return .disarm;
+            return .rearm;
         };
 
         if (ud) |user_data| {
@@ -489,8 +476,8 @@ pub const StubResolver = struct {
     fn externalReadCallback(
         ud: ?*ExternalContext,
         _: *xev.Loop,
-        c: *xev.Completion,
-        s: *xev.UDP.State,
+        _: *xev.Completion,
+        _: *xev.UDP.State,
         _: net.Address,
         _: UDP,
         buf: xev.ReadBuffer,
@@ -498,13 +485,11 @@ pub const StubResolver = struct {
     ) xev.CallbackAction {
         const len = r catch |err| {
             log.err("Error reading from External Server: {}", .{err});
-            return .disarm;
+            return .rearm;
         };
         var tmp_reader = std.io.fixedBufferStream(buf.slice[0..len]);
         if (ud) |user_data| {
             defer user_data.self.ext_context_pool.destroy(user_data);
-            user_data.self.state_pool.destroy(s);
-            user_data.self.completion_pool.destroy(c);
             const allocator = user_data.self.arena.allocator();
             const res = Message.Message.decode(
                 allocator,
@@ -532,6 +517,59 @@ pub const StubResolver = struct {
         return .disarm;
     }
 };
+
+pub fn StubResolver(comptime options: Options) type {
+    return struct {
+        const Self = @This();
+        allocator: Allocator,
+        thread_pool: std.Thread.Pool,
+
+        pub fn init(allocator: Allocator) !Self {
+            var thread_pool: std.Thread.Pool = undefined;
+            try std.Thread.Pool.init(&thread_pool, .{ .allocator = allocator });
+
+            return .{
+                .allocator = allocator,
+                .thread_pool = thread_pool,
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            self.thread_pool.deinit();
+        }
+
+        pub fn run(self: *Self) !void {
+            var workers: [8]std.Thread = undefined;
+            var threads: [8]Thread = undefined;
+
+            for (0..8) |i| {
+                threads[i] = try Thread.init(self.allocator, options);
+                workers[i] = try std.Thread.spawn(.{}, Thread.handle, .{ &threads[i], i });
+            }
+
+            var running = true;
+            const stdin = std.io.getStdIn().reader();
+            while (running) {
+                const in = try stdin.readUntilDelimiterAlloc(
+                    self.allocator,
+                    '\n',
+                    100,
+                );
+                defer self.allocator.free(in);
+                if (std.mem.eql(u8, in, "q")) {
+                    for (0..8) |i| {
+                        try threads[i].shutdown_notifier.notify();
+                    }
+                    running = false;
+                }
+            }
+
+            for (&threads) |*thread| {
+                thread.deinit();
+            }
+        }
+    };
+}
 
 // Copy records from one message to another
 // Update: only copy references
@@ -673,7 +711,7 @@ pub fn run() !void {
     const allocator = gpa.allocator();
     const stdin = std.io.getStdIn().reader();
 
-    var server = try StubResolver.init(
+    var server = try Thread.init(
         allocator,
         .{
             .bind_port = 5533,
@@ -684,8 +722,8 @@ pub fn run() !void {
 
     var main_thread = try std.Thread.spawn(
         .{},
-        StubResolver.handle,
-        .{&server},
+        Thread.handle,
+        .{ &server, 1 },
     );
 
     var running = true;
@@ -697,7 +735,7 @@ pub fn run() !void {
         );
         defer allocator.free(in);
         if (std.mem.eql(u8, in, "q")) {
-            try server.shutdown_notifier.notify();
+            try server.notifyShutdown();
             running = false;
         }
     }
