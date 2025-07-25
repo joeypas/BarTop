@@ -31,10 +31,8 @@ const log = std.log.scoped(.server);
 const BUFFER_SIZE = 1024;
 const READ_TIMEOUT_MS = 6000;
 
-// Global vars (for thread sync)
 var dns_mutex = Mutex{};
 var dns_condition = std.Thread.Condition{};
-var running = AtomicValue(bool).init(false);
 
 pub const Options = struct {
     external_server: ?[]const u8 = null,
@@ -45,19 +43,44 @@ pub const Options = struct {
 const xev = @import("xev");
 const UDP = xev.UDP;
 
+const AsyncContext = struct {
+    self: *StubResolver,
+    question: Message.Message,
+    message: Message.Message,
+    addr: std.net.Address,
+};
+
+const ExternalContext = struct {
+    self: *StubResolver,
+    qname_hash: u64,
+    message: *Message.Message,
+    recv_buf: [BUFFER_SIZE]u8 = undefined,
+    send_buf: [BUFFER_SIZE]u8 = undefined,
+};
+
+const ContextPool = std.heap.MemoryPoolExtra(AsyncContext, .{ .alignment = @alignOf(AsyncContext) });
+
+const ExtContextPool = std.heap.MemoryPoolExtra(ExternalContext, .{ .alignment = @alignOf(ExternalContext) });
+
 pub const StubResolver = struct {
     options: Options,
     allocator: Allocator,
     dns_cache: LRU(Message.Message),
     bind_addr: net.Address,
-    resolv: []const u8,
+    resolv: net.Address,
     udp: UDP,
+    ext_udp: UDP,
+    notifier: xev.Async,
+    shutdown_notifier: xev.Async,
+    c_shutdown: xev.Completion = undefined,
     loop: xev.Loop,
     timer: xev.Timer,
     c_read: xev.Completion = undefined,
     c_timer: xev.Completion = undefined,
     completion_pool: CompletionPool,
     state_pool: StatePool,
+    context_pool: ContextPool,
+    ext_context_pool: ExtContextPool,
     arena: std.heap.ArenaAllocator,
     thread_pool: xev.ThreadPool,
 
@@ -72,13 +95,16 @@ pub const StubResolver = struct {
         errdefer timer.deinit();
 
         const addr = try net.Address.parseIp(options.bind_addr, options.bind_port);
-        const resolv = try getResolv(
-            allocator,
-            options.external_server,
-        );
-        errdefer allocator.free(resolv);
+
+        const resolv = try net.Address.parseIp(options.external_server orelse "8.8.8.8", 53);
+        var notifier = try xev.Async.init();
+        errdefer notifier.deinit();
+
+        var shutdown_notifier = try xev.Async.init();
+        errdefer shutdown_notifier.deinit();
 
         const udp = try UDP.init(addr);
+        const ext_udp = try UDP.init(addr);
 
         return .{
             .allocator = allocator,
@@ -87,22 +113,30 @@ pub const StubResolver = struct {
             .options = options,
             .resolv = resolv,
             .udp = udp,
+            .ext_udp = ext_udp,
+            .notifier = notifier,
+            .shutdown_notifier = shutdown_notifier,
             .loop = loop,
             .timer = timer,
             .completion_pool = CompletionPool.init(allocator),
             .state_pool = StatePool.init(allocator),
+            .context_pool = ContextPool.init(allocator),
+            .ext_context_pool = ExtContextPool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
             .thread_pool = thread_pool,
         };
     }
 
     pub fn deinit(self: *StubResolver) void {
+        self.notifier.deinit();
+        self.shutdown_notifier.deinit();
         self.loop.deinit();
         self.thread_pool.deinit();
         self.arena.deinit();
-        self.allocator.free(self.resolv);
         self.completion_pool.deinit();
         self.state_pool.deinit();
+        self.context_pool.deinit();
+        self.ext_context_pool.deinit();
         self.dns_cache.deinit();
     }
 
@@ -113,17 +147,16 @@ pub const StubResolver = struct {
     }
 
     pub fn start(self: *StubResolver) !void {
-        // Send signal to main thread to show we are done
-        defer dns_condition.signal();
-
         try self.udp.bind(self.bind_addr);
         log.info("Listen on {any}", .{self.bind_addr});
 
         try self.read(&self.loop);
         self.timer.run(&self.loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
+        self.shutdown_notifier.wait(&self.loop, &self.c_shutdown, StubResolver, self, stopCallback);
         try self.loop.run(.until_done);
+    }
 
-        self.loop.stop();
+    pub fn stop(self: *StubResolver) !void {
         self.udp.close(&self.loop, &self.c_read, void, null, (struct {
             fn callback(
                 _: ?*void,
@@ -138,7 +171,37 @@ pub const StubResolver = struct {
         }).callback);
 
         try self.loop.run(.until_done);
+
+        self.ext_udp.close(&self.loop, &self.c_read, void, null, (struct {
+            fn callback(
+                _: ?*void,
+                _: *xev.Loop,
+                _: *xev.Completion,
+                _: UDP,
+                r: xev.CloseError!void,
+            ) xev.CallbackAction {
+                _ = r catch unreachable;
+                return .disarm;
+            }
+        }).callback);
+
+        try self.loop.run(.until_done);
         self.thread_pool.shutdown();
+        dns_condition.signal();
+    }
+
+    fn stopCallback(
+        ud: ?*StubResolver,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        r: xev.Async.WaitError!void,
+    ) xev.CallbackAction {
+        _ = r catch undefined;
+        if (ud) |user_data| {
+            user_data.loop.stop();
+            user_data.stop() catch unreachable;
+        }
+        return .disarm;
     }
 
     // We need this to run once every second to update ttl values, and remove
@@ -184,15 +247,13 @@ pub const StubResolver = struct {
             }
         }
 
-        if (running.load(.acquire)) {
-            self.timer.run(loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
-        }
+        self.timer.run(loop, &self.c_timer, 1000, StubResolver, self, timerCallback);
 
         return .disarm;
     }
 
     pub fn read(self: *StubResolver, loop: *xev.Loop) !void {
-        var allocator = self.arena.allocator();
+        const allocator = self.arena.allocator();
         var recv_buf = try allocator.alloc(u8, BUFFER_SIZE);
         const c_read = try self.completion_pool.create();
         const s_read = try self.state_pool.create();
@@ -207,35 +268,51 @@ pub const StubResolver = struct {
         );
     }
 
-    pub fn write(
-        self: *StubResolver,
-        loop: *xev.Loop,
-        addr: net.Address,
-        buf: []u8,
-    ) !void {
+    fn asyncCallback(
+        ud: ?*AsyncContext,
+        _: *xev.Loop,
+        c: *xev.Completion,
+        r: xev.Async.WaitError!void,
+    ) xev.CallbackAction {
+        _ = r catch unreachable;
+        if (ud) |context| {
+            write(context) catch |err| {
+                log.err("Error in write: {}", .{err});
+                return .disarm;
+            };
+            context.self.completion_pool.destroy(c);
+        }
+        return .disarm;
+    }
+
+    fn write(context: *AsyncContext) !void {
+        var self = context.self;
+        var message = context.message;
         var allocator = self.arena.allocator();
-        var response_buf = try allocator.alloc(u8, BUFFER_SIZE);
-        const len = try handleDnsQuery(
-            self,
-            buf[0..],
-            response_buf,
-        );
+
+        var response = try allocator.alloc(u8, BUFFER_SIZE);
+        var fbw = std.io.fixedBufferStream(response);
+
+        const len = try message.encode(fbw.writer().any());
+
+        response = try allocator.realloc(response, len);
 
         const c_write = try self.completion_pool.create();
         const s_write = try self.state_pool.create();
-        response_buf = try allocator.realloc(response_buf, len);
+
+        const addr = context.addr;
 
         self.udp.write(
-            loop,
+            &self.loop,
             c_write,
             s_write,
             addr,
-            .{ .slice = response_buf },
-            StubResolver,
-            self,
+            .{ .slice = response },
+            AsyncContext,
+            context,
             (struct {
                 fn callback(
-                    user_data: ?*StubResolver,
+                    user_data: ?*AsyncContext,
                     _: *xev.Loop,
                     cw: *xev.Completion,
                     sw: *UDP.State,
@@ -245,12 +322,49 @@ pub const StubResolver = struct {
                 ) xev.CallbackAction {
                     _ = r catch unreachable;
                     const server = user_data.?;
-                    server.arena.allocator().free(buff.slice);
-                    server.completion_pool.destroy(cw);
-                    server.state_pool.destroy(sw);
+                    server.self.arena.allocator().free(buff.slice);
+                    server.self.completion_pool.destroy(cw);
+                    server.self.state_pool.destroy(sw);
+                    server.question.deinit();
+                    server.message.deinit();
+                    server.self.context_pool.destroy(server);
                     return .disarm;
                 }
             }).callback,
+        );
+    }
+
+    pub fn handlePacket(
+        self: *StubResolver,
+        loop: *xev.Loop,
+        addr: net.Address,
+        buf: []u8,
+    ) !void {
+        const allocator = self.arena.allocator();
+        const context = try self.context_pool.create();
+        var fbr = std.io.fixedBufferStream(buf);
+
+        context.* = AsyncContext{
+            .self = self,
+            .question = try Message.Message.decode(allocator, fbr.reader().any()),
+            .message = Message.Message.init(allocator),
+            .addr = addr,
+        };
+        context.message.ref = true;
+
+        errdefer context.question.deinit();
+        errdefer context.message.deinit();
+        errdefer self.context_pool.destroy(context);
+
+        try createDnsResponse(&context.message, &context.question);
+        const c_wait = try self.completion_pool.create();
+        self.notifier.wait(loop, c_wait, AsyncContext, context, asyncCallback);
+
+        try handleDnsQuery(
+            self,
+            buf[0..],
+            &context.message,
+            &context.question,
         );
     }
 
@@ -270,15 +384,13 @@ pub const StubResolver = struct {
             return .rearm;
         };
         if (ud) |user_data| {
-            if (running.load(.acquire)) {
-                user_data.read(&user_data.loop) catch |err| {
-                    log.err("Error in read: {}\n", .{err});
-                    return .rearm;
-                };
-            }
+            user_data.read(&user_data.loop) catch |err| {
+                log.err("Error in read: {}\n", .{err});
+                return .rearm;
+            };
             user_data.completion_pool.destroy(c);
             user_data.state_pool.destroy(s);
-            user_data.write(&user_data.loop, addr, buf.slice[0..len]) catch |err| {
+            user_data.handlePacket(&user_data.loop, addr, buf.slice[0..len]) catch |err| {
                 log.err("Error in write: {}\n", .{err});
                 return .disarm;
             };
@@ -289,27 +401,18 @@ pub const StubResolver = struct {
     }
 
     fn handleDnsQuery(
-        user_data: *StubResolver,
+        self: *StubResolver,
         query: []const u8,
-        response: []u8,
-    ) !usize {
+        response: *Message.Message,
+        packet: *Message.Message,
+    ) !void {
         // TODO: Return error messages when error is encountered
-        const allocator = user_data.arena.allocator();
         const header_len = 12;
         if (query.len < header_len) {
             return error.InvalidDNSQuery;
         }
 
-        var fbr = std.io.fixedBufferStream(query);
-        var fbw = std.io.fixedBufferStream(response);
-
-        var packet = try Message.Message.decode(allocator, fbr.reader().any());
-        var response_packet = Message.Message.init(allocator);
-        // doing alot of copying but we dont want to have to clone allocations
-        response_packet.ref = true;
-        defer response_packet.deinit();
-        defer packet.deinit();
-        try createDnsResponse(&response_packet, &packet);
+        var did_ask = false;
 
         log.debug("Received DNS Packet:\n{s}", .{packet});
 
@@ -321,38 +424,112 @@ pub const StubResolver = struct {
             //std.debug.print("Qname: {s}\n", .{qname});
             const qname_hash = hashFn(qname);
 
-            if (user_data.dns_cache.get(qname_hash)) |*cached_response| {
+            if (self.dns_cache.get(qname_hash)) |*cached_response| {
                 log.debug("Cache hit for {s}", .{qname});
 
                 // Add cached records to our response
-                try glue(&response_packet, cached_response.*);
+                try glue(response, cached_response.*);
             } else {
                 log.debug("Not found in local store, querying external server...", .{});
-                var tmp_response: [BUFFER_SIZE]u8 = undefined;
-                const external_len = try queryExternalServer(
-                    user_data.resolv,
-                    query,
-                    &tmp_response,
-                );
-
-                var tmp_reader = std.io.fixedBufferStream(tmp_response[0..external_len]);
-                const res = Message.Message.decode(
-                    allocator,
-                    tmp_reader.reader().any(),
-                ) catch |err| {
-                    log.err("in decode", .{});
-                    return err;
+                const c_ext = try self.completion_pool.create();
+                const s_ext = try self.state_pool.create();
+                const ext_context = try self.ext_context_pool.create();
+                ext_context.* = ExternalContext{
+                    .self = self,
+                    .message = response,
+                    .qname_hash = qname_hash,
                 };
-
-                // Add external records to our response
-                try glue(&response_packet, res);
-
-                try user_data.dns_cache.put(qname_hash, res);
+                @memcpy(ext_context.send_buf[0..query.len], query);
+                self.ext_udp.write(
+                    &self.loop,
+                    c_ext,
+                    s_ext,
+                    self.resolv,
+                    .{ .slice = ext_context.send_buf[0..query.len] },
+                    ExternalContext,
+                    ext_context,
+                    externalWriteCallback,
+                );
+                did_ask = true;
             }
         }
 
-        log.debug("Sending DNS Packet:\n{s}", .{response_packet});
-        return response_packet.encode(fbw.writer().any());
+        if (!did_ask) try self.notifier.notify();
+    }
+
+    fn externalWriteCallback(
+        ud: ?*ExternalContext,
+        loop: *xev.Loop,
+        cw: *xev.Completion,
+        sw: *UDP.State,
+        _: UDP,
+        _: xev.WriteBuffer,
+        r: xev.WriteError!usize,
+    ) xev.CallbackAction {
+        _ = r catch |err| {
+            log.err("Error in External Write: {}", .{err});
+            return .disarm;
+        };
+
+        if (ud) |user_data| {
+            user_data.self.ext_udp.read(
+                loop,
+                cw,
+                sw,
+                .{ .slice = user_data.recv_buf[0..] },
+                ExternalContext,
+                user_data,
+                externalReadCallback,
+            );
+        }
+
+        return .disarm;
+    }
+
+    fn externalReadCallback(
+        ud: ?*ExternalContext,
+        _: *xev.Loop,
+        c: *xev.Completion,
+        s: *xev.UDP.State,
+        _: net.Address,
+        _: UDP,
+        buf: xev.ReadBuffer,
+        r: xev.ReadError!usize,
+    ) xev.CallbackAction {
+        const len = r catch |err| {
+            log.err("Error reading from External Server: {}", .{err});
+            return .disarm;
+        };
+        var tmp_reader = std.io.fixedBufferStream(buf.slice[0..len]);
+        if (ud) |user_data| {
+            defer user_data.self.ext_context_pool.destroy(user_data);
+            user_data.self.state_pool.destroy(s);
+            user_data.self.completion_pool.destroy(c);
+            const allocator = user_data.self.arena.allocator();
+            const res = Message.Message.decode(
+                allocator,
+                tmp_reader.reader().any(),
+            ) catch |err| {
+                log.err("Error decoding external message: {}", .{err});
+                return .disarm;
+            };
+
+            // Add external records to our response
+            glue(user_data.message, res) catch |err| {
+                log.err("Error preforming glue: {}", .{err});
+                return .disarm;
+            };
+
+            user_data.self.dns_cache.put(user_data.qname_hash, res) catch |err| {
+                log.err("Error storing message in cache: {}", .{err});
+            };
+
+            user_data.self.notifier.notify() catch |err| {
+                log.err("Error notifying: {}", .{err});
+                return .disarm;
+            };
+        }
+        return .disarm;
     }
 };
 
@@ -511,8 +688,8 @@ pub fn run() !void {
         .{&server},
     );
 
-    running.store(true, .monotonic);
-    while (running.load(.acquire)) {
+    var running = true;
+    while (running) {
         const in = try stdin.readUntilDelimiterAlloc(
             allocator,
             '\n',
@@ -520,7 +697,8 @@ pub fn run() !void {
         );
         defer allocator.free(in);
         if (std.mem.eql(u8, in, "q")) {
-            running.store(false, .release);
+            try server.shutdown_notifier.notify();
+            running = false;
         }
     }
 
