@@ -12,7 +12,6 @@ const LRU = @import("util/cache.zig").LRU;
 // 1. Implement Timeout/backup server to ask if timeout is too long
 // 2. Validate Messages
 // 3. Return correct errors when we encounter one
-// 4. Async reads/writes when querying external server
 
 // Logging setup
 const level: std.log.Level = switch (@import("builtin").mode) {
@@ -27,9 +26,6 @@ const log = std.log.scoped(.server);
 // Constants
 const BUFFER_SIZE = 1024;
 const READ_TIMEOUT_MS = 6000;
-
-var dns_mutex = Mutex{};
-var dns_condition = std.Thread.Condition{};
 
 pub const Options = struct {
     external_server: ?[]const u8 = null,
@@ -68,6 +64,8 @@ const ContextPool = std.heap.MemoryPoolExtra(AsyncContext, .{ .alignment = @alig
 const ExtContextPool = std.heap.MemoryPoolExtra(ExternalContext, .{ .alignment = @alignOf(ExternalContext) });
 
 pub const Thread = struct {
+    id: usize = 0,
+    // TODO: Should this be a central cache all threads can use? Or should we cache per thread?
     dns_cache: LRU(Message.Message),
     bind_addr: net.Address,
     resolv: net.Address,
@@ -75,11 +73,11 @@ pub const Thread = struct {
     ext_udp: UDP,
     notifier: xev.Async,
     shutdown_notifier: xev.Async,
-    c_shutdown: xev.Completion = undefined,
+    c_shutdown: xev.Completion = .{},
     loop: xev.Loop,
     timer: xev.Timer,
-    c_read: xev.Completion = undefined,
-    c_timer: xev.Completion = undefined,
+    c_read: xev.Completion = .{},
+    c_timer: xev.Completion = .{},
     context_pool: ContextPool,
     ext_context_pool: ExtContextPool,
     arena: std.heap.ArenaAllocator,
@@ -89,7 +87,7 @@ pub const Thread = struct {
         var thread_pool = xev.ThreadPool.init(.{});
         errdefer thread_pool.deinit();
 
-        var loop = try xev.Loop.init(.{ .thread_pool = &thread_pool });
+        var loop = try xev.Loop.init(.{});
         errdefer loop.deinit();
 
         var timer = try xev.Timer.init();
@@ -130,12 +128,13 @@ pub const Thread = struct {
         self.ext_context_pool.deinit();
         self.notifier.deinit();
         self.shutdown_notifier.deinit();
-        self.loop.deinit();
-        self.thread_pool.deinit();
+        //self.loop.deinit();
         self.arena.deinit();
+        log.debug("Thread {d}: destroyed", .{self.id});
     }
 
     pub fn handle(self: *Thread, id: usize) void {
+        self.id = id;
         self.start() catch |err| {
             log.err("Error in Thread {d} run: {}", .{ id, err });
         };
@@ -143,7 +142,7 @@ pub const Thread = struct {
 
     pub fn start(self: *Thread) !void {
         try self.udp.bind(self.bind_addr);
-        log.info("Listen on {any}", .{self.bind_addr});
+        log.info("Thread {d}: Listen on {any}", .{ self.id, self.bind_addr });
 
         try self.read();
         self.timer.run(&self.loop, &self.c_timer, 1000, Thread, self, timerCallback);
@@ -156,37 +155,14 @@ pub const Thread = struct {
     }
 
     fn stop(self: *Thread) !void {
-        self.udp.close(&self.loop, &self.c_read, void, null, (struct {
-            fn callback(
-                _: ?*void,
-                _: *xev.Loop,
-                _: *xev.Completion,
-                _: UDP,
-                r: xev.CloseError!void,
-            ) xev.CallbackAction {
-                _ = r catch unreachable;
-                return .disarm;
-            }
-        }).callback);
+        posix.close(self.udp.fd);
+        posix.close(self.ext_udp.fd);
 
-        try self.loop.run(.until_done);
-
-        self.ext_udp.close(&self.loop, &self.c_read, void, null, (struct {
-            fn callback(
-                _: ?*void,
-                _: *xev.Loop,
-                _: *xev.Completion,
-                _: UDP,
-                r: xev.CloseError!void,
-            ) xev.CallbackAction {
-                _ = r catch unreachable;
-                return .disarm;
-            }
-        }).callback);
-
-        try self.loop.run(.until_done);
+        self.loop.deinit();
         self.thread_pool.shutdown();
-        dns_condition.signal();
+        self.thread_pool.deinit();
+        log.debug("Thread {d}: shutdown", .{self.id});
+        //dns_condition.signal();
     }
 
     fn stopCallback(
@@ -325,6 +301,7 @@ pub const Thread = struct {
                         return .rearm;
                     };
                     const server = user_data.?;
+                    log.debug("Wrote DNS Packet:\n{s}", .{server.message});
                     server.self.context_pool.destroy(server);
                     return .disarm;
                 }
@@ -372,12 +349,12 @@ pub const Thread = struct {
     ) xev.CallbackAction {
         const len = r catch |err| {
             log.err("Read error: {}\n", .{err});
-            return .rearm;
+            return .disarm;
         };
         if (ud) |user_data| {
             user_data.self.read() catch |err| {
                 log.err("Error in read: {}\n", .{err});
-                return .rearm;
+                return .disarm;
             };
             user_data.addr = addr;
             user_data.self.handlePacket(user_data, buf.slice[0..len]) catch |err| {
@@ -410,7 +387,6 @@ pub const Thread = struct {
             // Add the question type so we don't accidentally get a cache entry for
             // another type of question
             const qname = try question.qname.print(&qname_buf, question.qtype);
-            //std.debug.print("Qname: {s}\n", .{qname});
             const qname_hash = hashFn(qname);
 
             if (self.dns_cache.get(qname_hash)) |*cached_response| {
@@ -518,37 +494,32 @@ pub const Thread = struct {
     }
 };
 
+// TODO: This is mostly an example and not fully featured, just shows how to manage threads
 pub fn StubResolver(comptime options: Options) type {
     return struct {
         const Self = @This();
         allocator: Allocator,
-        thread_pool: std.Thread.Pool,
 
         pub fn init(allocator: Allocator) !Self {
-            var thread_pool: std.Thread.Pool = undefined;
-            try std.Thread.Pool.init(&thread_pool, .{ .allocator = allocator });
-
             return .{
                 .allocator = allocator,
-                .thread_pool = thread_pool,
             };
         }
 
-        pub fn deinit(self: *Self) void {
-            self.thread_pool.deinit();
-        }
+        pub fn deinit(_: *Self) void {}
 
         pub fn run(self: *Self) !void {
-            var workers: [8]std.Thread = undefined;
-            var threads: [8]Thread = undefined;
+            var workers: [options.thread_count]std.Thread = undefined;
+            var threads: [options.thread_count]Thread = undefined;
 
             for (0..8) |i| {
                 threads[i] = try Thread.init(self.allocator, options);
-                workers[i] = try std.Thread.spawn(.{}, Thread.handle, .{ &threads[i], i });
+                workers[i] = try std.Thread.spawn(.{ .allocator = self.allocator }, Thread.handle, .{ &threads[i], i });
             }
 
             var running = true;
-            const stdin = std.io.getStdIn().reader();
+            var stdin_fd = std.io.getStdIn();
+            const stdin = stdin_fd.reader();
             while (running) {
                 const in = try stdin.readUntilDelimiterAlloc(
                     self.allocator,
@@ -558,12 +529,17 @@ pub fn StubResolver(comptime options: Options) type {
                 defer self.allocator.free(in);
                 if (std.mem.eql(u8, in, "q")) {
                     for (0..8) |i| {
+                        // Tell each thread to shutdown
                         try threads[i].shutdown_notifier.notify();
                     }
                     running = false;
                 }
             }
-
+            stdin_fd.close();
+            for (workers) |worker| {
+                worker.join();
+                log.debug("Thread joined", .{});
+            }
             for (&threads) |*thread| {
                 thread.deinit();
             }
@@ -582,40 +558,6 @@ fn glue(message: *Message.Message, other: Message.Message) !void {
 
     try message.additionals.appendSlice(other.additionals.items);
     message.header.ar_count += other.header.ar_count;
-}
-
-fn queryExternalServer(resolv: []const u8, query: []const u8, response: []u8) !usize {
-    // TODO: Placeholder implementation
-    const external_server_port = 53;
-
-    const addr = try net.Address.parseIp(resolv, external_server_port);
-    const sock = try posix.socket(
-        posix.AF.INET,
-        posix.SOCK.DGRAM,
-        posix.IPPROTO.UDP,
-    );
-    defer posix.close(sock);
-
-    var from_addr: posix.sockaddr = undefined;
-    var from_addrlen: posix.socklen_t = @sizeOf(posix.sockaddr);
-    _ = try posix.sendto(
-        sock,
-        query,
-        0,
-        &addr.any,
-        addr.getOsSockLen(),
-    );
-
-    var buf: [BUFFER_SIZE]u8 = undefined;
-    const recv_bytes = try posix.recvfrom(
-        sock,
-        buf[0..],
-        0,
-        &from_addr,
-        &from_addrlen,
-    );
-    std.mem.copyForwards(u8, response, buf[0..recv_bytes]);
-    return recv_bytes;
 }
 
 inline fn createDnsResponse(message: *Message.Message, packet: *Message.Message) !void {
@@ -709,39 +651,9 @@ pub fn run() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    const stdin = std.io.getStdIn().reader();
 
-    var server = try Thread.init(
-        allocator,
-        .{
-            .bind_port = 5533,
-            .external_server = "8.8.8.8",
-        },
-    );
+    var server = try StubResolver(.{ .bind_port = 5533, .external_server = "8.8.8.8" }).init(allocator);
     defer server.deinit();
 
-    var main_thread = try std.Thread.spawn(
-        .{},
-        Thread.handle,
-        .{ &server, 1 },
-    );
-
-    var running = true;
-    while (running) {
-        const in = try stdin.readUntilDelimiterAlloc(
-            allocator,
-            '\n',
-            100,
-        );
-        defer allocator.free(in);
-        if (std.mem.eql(u8, in, "q")) {
-            try server.notifyShutdown();
-            running = false;
-        }
-    }
-
-    dns_mutex.lock();
-    dns_condition.wait(&dns_mutex);
-    dns_mutex.unlock();
-    main_thread.join();
+    try server.run();
 }
