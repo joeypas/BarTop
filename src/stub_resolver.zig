@@ -512,9 +512,13 @@ pub fn StubResolver(comptime options: Options) type {
             var workers: [options.thread_count]std.Thread = undefined;
             var threads: [options.thread_count]Thread = undefined;
 
-            for (0..8) |i| {
+            for (0..options.thread_count) |i| {
                 threads[i] = try Thread.init(self.allocator, options);
-                workers[i] = try std.Thread.spawn(.{ .allocator = self.allocator }, Thread.handle, .{ &threads[i], i });
+                workers[i] = try std.Thread.spawn(
+                    .{ .allocator = self.allocator },
+                    Thread.handle,
+                    .{ &threads[i], i },
+                );
             }
 
             var running = true;
@@ -528,10 +532,13 @@ pub fn StubResolver(comptime options: Options) type {
                 );
                 defer self.allocator.free(in);
                 if (std.mem.eql(u8, in, "q")) {
-                    for (0..8) |i| {
+                    for (0..options.thread_count) |i| {
                         // Tell each thread to shutdown
                         try threads[i].shutdown_notifier.notify();
                     }
+                    running = false;
+                }
+            }
                     running = false;
                 }
             }
