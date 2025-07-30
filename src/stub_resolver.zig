@@ -47,6 +47,10 @@ const AsyncContext = struct {
     state: UDP.State = undefined,
     completion: xev.Completion = .{},
     wait_completion: xev.Completion = .{},
+    canceled: bool = false,
+    cancel_timer: xev.Timer = undefined,
+    timer_completion: xev.Completion = .{},
+    cancel_completion: xev.Completion = .{},
 };
 
 const ExternalContext = struct {
@@ -81,12 +85,8 @@ pub const Thread = struct {
     context_pool: ContextPool,
     ext_context_pool: ExtContextPool,
     arena: std.heap.ArenaAllocator,
-    thread_pool: xev.ThreadPool,
 
     pub fn init(allocator: Allocator, options: Options) !Thread {
-        var thread_pool = xev.ThreadPool.init(.{});
-        errdefer thread_pool.deinit();
-
         var loop = try xev.Loop.init(.{});
         errdefer loop.deinit();
 
@@ -118,7 +118,6 @@ pub const Thread = struct {
             .context_pool = ContextPool.init(allocator),
             .ext_context_pool = ExtContextPool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .thread_pool = thread_pool,
         };
     }
 
@@ -128,7 +127,6 @@ pub const Thread = struct {
         self.ext_context_pool.deinit();
         self.notifier.deinit();
         self.shutdown_notifier.deinit();
-        //self.loop.deinit();
         self.arena.deinit();
         log.debug("Thread {d}: destroyed", .{self.id});
     }
@@ -159,8 +157,6 @@ pub const Thread = struct {
         posix.close(self.ext_udp.fd);
 
         self.loop.deinit();
-        self.thread_pool.shutdown();
-        self.thread_pool.deinit();
         log.debug("Thread {d}: shutdown", .{self.id});
         //dns_condition.signal();
     }
@@ -196,38 +192,39 @@ pub const Thread = struct {
         _ = result catch return .rearm;
 
         var itr = self.dns_cache.map.valueIterator();
+        var removed_any = false;
 
         while (itr.next()) |value| {
             for (value.*.value.answers.items) |*item| {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
-                    self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
-
-                    return .disarm;
+                    removed_any = true;
+                    break;
                 }
                 item.ttl -= 1;
             }
+            if (removed_any) continue;
             for (value.*.value.authorities.items) |*item| {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
-                    self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
-
-                    return .disarm;
+                    removed_any = true;
+                    break;
                 }
                 item.ttl -= 1;
             }
+            if (removed_any) continue;
             for (value.*.value.additionals.items) |*item| {
                 if (item.ttl == 0) {
                     value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
-                    self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
-
-                    return .disarm;
+                    removed_any = true;
+                    break;
                 }
                 item.ttl -= 1;
             }
+            if (removed_any) continue;
         }
 
         self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
@@ -249,6 +246,27 @@ pub const Thread = struct {
         );
     }
 
+    fn timeoutCallback(
+        ud: ?*AsyncContext,
+        _: *xev.Loop,
+        _: *xev.Completion,
+        r: xev.Timer.RunError!void,
+    ) xev.CallbackAction {
+        _ = r catch |err| switch (err) {
+            xev.Timer.RunError.Canceled => return .disarm,
+            else => {
+                log.err("Timeout error: {}", .{err});
+                return .disarm;
+            },
+        };
+
+        if (ud) |user_data| {
+            user_data.canceled = true;
+        }
+
+        return .disarm;
+    }
+
     fn asyncCallback(
         ud: ?*AsyncContext,
         _: *xev.Loop,
@@ -260,10 +278,17 @@ pub const Thread = struct {
             return .rearm;
         };
         if (ud) |context| {
-            write(context) catch |err| {
-                log.err("Error in write: {}", .{err});
+            if (!context.canceled) {
+                write(context) catch |err| {
+                    log.err("Error in write: {}", .{err});
+                    return .disarm;
+                };
+            } else {
+                log.debug("Cancelled", .{});
+                context.cancel_timer.deinit();
+                context.self.context_pool.destroy(context);
                 return .disarm;
-            };
+            }
         }
         return .disarm;
     }
@@ -277,6 +302,18 @@ pub const Thread = struct {
         const len = try message.encode(fbw.writer().any());
 
         const addr = context.addr;
+
+        context.cancel_timer.cancel(&context.self.loop, &context.timer_completion, &context.cancel_completion, void, null, (struct {
+            fn callback(
+                _: ?*void,
+                _: *xev.Loop,
+                _: *xev.Completion,
+                r: xev.Timer.CancelError!void,
+            ) xev.CallbackAction {
+                _ = r catch unreachable;
+                return .disarm;
+            }
+        }).callback);
 
         self.udp.write(
             &self.loop,
@@ -302,6 +339,7 @@ pub const Thread = struct {
                     };
                     const server = user_data.?;
                     log.debug("Wrote DNS Packet:\n{s}", .{server.message});
+                    server.cancel_timer.deinit();
                     server.self.context_pool.destroy(server);
                     return .disarm;
                 }
@@ -333,6 +371,7 @@ pub const Thread = struct {
             buf[0..],
             &context.message,
             &context.question,
+            &context.canceled,
         );
     }
 
@@ -352,6 +391,12 @@ pub const Thread = struct {
             return .disarm;
         };
         if (ud) |user_data| {
+            user_data.cancel_timer = xev.Timer.init() catch |err| {
+                log.err("Error setting up Timeout: {}", .{err});
+                return .disarm;
+            };
+
+            user_data.cancel_timer.run(&user_data.self.loop, &user_data.timer_completion, READ_TIMEOUT_MS, AsyncContext, user_data, timeoutCallback);
             user_data.self.read() catch |err| {
                 log.err("Error in read: {}\n", .{err});
                 return .disarm;
@@ -371,6 +416,7 @@ pub const Thread = struct {
         query: []const u8,
         response: *Message.Message,
         packet: *Message.Message,
+        canceled: *bool,
     ) !void {
         // TODO: Return error messages when error is encountered
         const header_len = 12;
@@ -395,25 +441,29 @@ pub const Thread = struct {
                 // Add cached records to our response
                 try glue(response, cached_response.*);
             } else {
-                log.debug("Not found in local store, querying external server...", .{});
-                const ext_context = try self.ext_context_pool.create();
-                ext_context.* = ExternalContext{
-                    .self = self,
-                    .message = response,
-                    .qname_hash = qname_hash,
-                };
-                @memcpy(ext_context.send_buf[0..query.len], query);
-                self.ext_udp.write(
-                    &self.loop,
-                    &ext_context.completion,
-                    &ext_context.state,
-                    self.resolv,
-                    .{ .slice = ext_context.send_buf[0..query.len] },
-                    ExternalContext,
-                    ext_context,
-                    externalWriteCallback,
-                );
-                did_ask = true;
+                if (canceled.*) {
+                    try self.notifier.notify();
+                } else {
+                    log.debug("Not found in local store, querying external server...", .{});
+                    const ext_context = try self.ext_context_pool.create();
+                    ext_context.* = ExternalContext{
+                        .self = self,
+                        .message = response,
+                        .qname_hash = qname_hash,
+                    };
+                    @memcpy(ext_context.send_buf[0..query.len], query);
+                    self.ext_udp.write(
+                        &self.loop,
+                        &ext_context.completion,
+                        &ext_context.state,
+                        self.resolv,
+                        .{ .slice = ext_context.send_buf[0..query.len] },
+                        ExternalContext,
+                        ext_context,
+                        externalWriteCallback,
+                    );
+                    did_ask = true;
+                }
             }
         }
 
@@ -536,9 +586,6 @@ pub fn StubResolver(comptime options: Options) type {
                         // Tell each thread to shutdown
                         try threads[i].shutdown_notifier.notify();
                     }
-                    running = false;
-                }
-            }
                     running = false;
                 }
             }
