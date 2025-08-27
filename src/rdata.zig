@@ -2,7 +2,8 @@ const std = @import("std");
 const message = @import("message.zig");
 const rr = @import("rr.zig");
 const DNSSEC = @import("dnssec.zig");
-const Reader = message.Reader;
+const Reader = std.Io.Reader;
+const Writer = std.Io.Writer;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const Name = rr.Name;
@@ -49,12 +50,12 @@ fn initRData(T: type, comptime tag: RType, allocator: Allocator) RData {
     }
 }
 
-fn deinitRData(comptime T: type, data: *T) void {
+fn deinitRData(comptime T: type, data: *T, allocator: Allocator) void {
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
                 if (std.meta.hasFn(field.type, "deinit")) {
-                    @field(data, field.name).deinit();
+                    @field(data, field.name).deinit(allocator);
                 }
             }
         },
@@ -62,33 +63,32 @@ fn deinitRData(comptime T: type, data: *T) void {
     }
 }
 
-fn decodeRData(T: type, comptime tag: RType, allocator: Allocator, size: usize, buffered_reader: *Reader) !RData {
+fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, size: usize, reader: *Reader) !RData {
     var ret: T = undefined;
-    var reader = buffered_reader.reader();
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
             inline for (info.fields) |field| {
                 if (std.mem.startsWith(u8, field.name, "_")) {} else if (std.meta.hasFn(field.type, "decode")) {
-                    @field(ret, field.name) = try field.type.decode(allocator, buffered_reader);
+                    @field(ret, field.name) = try field.type.decode(allocator, reader);
                 } else if (@typeInfo(field.type) == .int) {
-                    @field(ret, field.name) = try reader.readInt(field.type, .big);
+                    @field(ret, field.name) = try reader.takeInt(field.type, .big);
                 } else if (@typeInfo(field.type) == .@"enum") {
-                    @field(ret, field.name) = @enumFromInt(try reader.readInt(@typeInfo(field.type).@"enum".tag_type, .big));
+                    @field(ret, field.name) = @enumFromInt(try reader.takeInt(@typeInfo(field.type).@"enum".tag_type, .big));
                 } else if (field.type == ArrayList(u8)) {
                     const name = field.name ++ "_len";
                     if (@hasField(T, name)) {
                         const len = @field(ret, name);
-                        var array = try ArrayList(u8).initCapacity(allocator, @intCast(len));
+                        var array = try Writer.Allocating.initCapacity(allocator, @intCast(len));
                         errdefer array.deinit();
 
-                        var bytes = array.addManyAsSliceAssumeCapacity(@intCast(len));
-                        try reader.readNoEof(bytes[0..]);
-                        @field(ret, field.name) = array;
+                        _ = try reader.streamRemaining(&array.writer);
+                        @field(ret, field.name) = array.toArrayList();
                     } else {
-                        var array = try ArrayList(u8).initCapacity(allocator, size);
+                        var writer = try Writer.Allocating.initCapacity(allocator, size);
 
-                        try reader.readAllArrayList(&array, size);
-                        array.shrinkAndFree(array.items.len);
+                        _ = try reader.stream(&writer.writer, .limited(size));
+                        var array = writer.toArrayList();
+                        array.shrinkAndFree(allocator, array.items.len);
 
                         @field(ret, field.name) = array;
                     }
@@ -100,7 +100,7 @@ fn decodeRData(T: type, comptime tag: RType, allocator: Allocator, size: usize, 
     }
 }
 
-fn encodeRData(comptime T: type, data: *T, writer: std.io.AnyWriter) !usize {
+fn encodeRData(comptime T: type, data: *T, writer: *Writer) !usize {
     var len: usize = 0;
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -142,7 +142,7 @@ fn getLenRData(comptime T: type, data: *T) u16 {
     }
 }
 
-fn rdataFromString(comptime T: type, self: *T, data: []const u8) !void {
+fn rdataFromString(comptime T: type, self: *T, allocator: Allocator, data: []const u8) !void {
     var tokens = std.mem.tokenizeAny(u8, data, " \t");
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -155,7 +155,7 @@ fn rdataFromString(comptime T: type, self: *T, data: []const u8) !void {
                     @field(self, field.name) = @enumFromInt(try std.fmt.parseInt(@typeInfo(field.type).@"enum".tag_type, tokens.next() orelse return error.MissingData, 10));
                 } else if (field.type == ArrayList(u8)) {
                     while (tokens.next()) |token| {
-                        try @field(self, field.name).appendSlice(token);
+                        try @field(self, field.name).appendSlice(allocator, token);
                     }
                 }
             }
@@ -164,9 +164,7 @@ fn rdataFromString(comptime T: type, self: *T, data: []const u8) !void {
     }
 }
 
-pub fn formatRData(comptime T: type, data: T, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = options;
+pub fn formatRData(comptime T: type, data: T, writer: *std.io.Writer) !void {
     try writer.print("[\n", .{});
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -177,7 +175,7 @@ pub fn formatRData(comptime T: type, data: T, comptime fmt: []const u8, options:
                 } else if (@typeInfo(field.type) == .int) {
                     try writer.print("{s}: {d}", .{ field.name, @field(data, field.name) });
                 } else if (std.meta.hasFn(field.type, "format")) {
-                    try writer.print("{s}: {}", .{ field.name, @field(data, field.name) });
+                    try writer.print("{s}: {f}", .{ field.name, @field(data, field.name) });
                 } else {
                     try writer.print("{s}: {any}", .{ field.name, @field(data, field.name) });
                 }
@@ -246,37 +244,40 @@ pub const RData = union(RType) {
         };
     }
 
-    pub fn deinit(self: *RData) void {
+    pub fn deinit(self: *RData, allocator: Allocator) void {
         switch (self.*) {
-            .data => |*case| case.deinit(),
-            inline else => |*t| deinitRData(@TypeOf(t.*), t),
+            .data => |*case| case.deinit(allocator),
+            inline else => |*t| deinitRData(@TypeOf(t.*), t, allocator),
         }
     }
 
-    fn getType(@"type": Type) RType {
-        const ret = std.meta.intToEnum(RType, @intFromEnum(@"type")) catch RType.data;
-        return ret;
-    }
-
-    pub fn decode(allocator: Allocator, @"type": Type, size: usize, buffered_reader: *Reader) !RData {
-        var reader = buffered_reader.reader();
-        switch (getType(@"type")) {
-            .a => {
-                var data: [4]u8 = undefined;
-                _ = try reader.read(&data);
+    pub fn decode(allocator: Allocator, @"type": Type, size: usize, reader: *Reader) !RData {
+        switch (@"type") {
+            inline .cname,
+            .ns,
+            .ptr,
+            .mx,
+            .txt,
+            .soa,
+            .srv,
+            .dnskey,
+            .sig,
+            .nsec3,
+            => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, reader),
+            Type.a => {
+                const data = try reader.takeArray(4);
                 return RData{ .a = .{
-                    .addr = std.net.Ip4Address.init(data, 0),
+                    .addr = std.net.Ip4Address.init(data.*, 0),
                 } };
             },
-            .aaaa => {
-                var data: [16]u8 = undefined;
-                _ = try reader.read(&data);
-                return RData{ .aaaa = .{ .addr = std.net.Ip6Address.init(data, 0, 0, 0) } };
+            Type.aaaa => {
+                const data = try reader.takeArray(16);
+                return RData{ .aaaa = .{ .addr = std.net.Ip6Address.init(data.*, 0, 0, 0) } };
             },
-            .ds => {
-                const key_tag = try reader.readInt(u16, .big);
-                const algorithm: DNSSEC.Algorithm = @enumFromInt(try reader.readByte());
-                const digest_type: DNSSEC.DigestType = @enumFromInt(try reader.readByte());
+            Type.ds => {
+                const key_tag = try reader.takeInt(u16, .big);
+                const algorithm: DNSSEC.Algorithm = @enumFromInt(try reader.takeByte());
+                const digest_type: DNSSEC.DigestType = @enumFromInt(try reader.takeByte());
                 const digest_size: usize = switch (digest_type) {
                     .sha1 => 20,
                     .sha256, .gost3411 => 32,
@@ -286,33 +287,30 @@ pub const RData = union(RType) {
                     else => return error.UnknownDigestType,
                 };
 
-                var digest = try ArrayList(u8).initCapacity(allocator, digest_size);
+                var digest = try Writer.Allocating.initCapacity(allocator, digest_size);
                 errdefer digest.deinit();
 
-                reader.readAllArrayList(&digest, digest_size) catch |err| switch (err) {
-                    error.StreamTooLong => undefined,
-                    else => return err,
-                };
+                try reader.streamExact(&digest.writer, digest_size);
 
                 return RData{ .ds = .{
                     .key_tag = key_tag,
                     .algorithm = algorithm,
                     .digest_type = digest_type,
-                    .digest = digest,
+                    .digest = digest.toArrayList(),
                 } };
             },
-            .data => {
-                var array = try ArrayList(u8).initCapacity(allocator, size);
+            else => {
+                var array = try Writer.Allocating.initCapacity(allocator, size);
                 errdefer array.deinit();
-                try reader.readAllArrayList(&array, size);
+                try reader.streamExact(&array.writer, size);
 
-                return RData{ .data = array };
+                return RData{ .data = array.toArrayList() };
             },
             inline else => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, buffered_reader),
         }
     }
 
-    pub fn encode(self: *RData, writer: std.io.AnyWriter) !usize {
+    pub fn encode(self: *RData, writer: *Writer) !usize {
         switch (self.*) {
             .a => |*a| {
                 const bytes = @as([4]u8, @bitCast(a.addr.sa.addr));
@@ -336,20 +334,20 @@ pub const RData = union(RType) {
         }
     }
 
-    pub fn parse(self: *RData, data: []const u8) !void {
+    pub fn parse(self: *RData, allocator: Allocator, data: []const u8) !void {
         const dat = std.mem.trim(u8, data, " \t\n\r");
         return switch (self.*) {
             .a => |*a| a.addr = try std.net.Ip4Address.parse(dat, 0),
             .aaaa => |*aaaa| aaaa.addr = try std.net.Ip6Address.parse(dat, 0),
             .data => |*list| try list.appendSlice(dat),
-            inline else => |*case| rdataFromString(@TypeOf(case.*), case, dat),
+            inline else => |*case| rdataFromString(@TypeOf(case.*), case, allocator, dat),
         };
     }
 
-    pub fn format(self: RData, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: RData, writer: *std.io.Writer) !void {
         switch (self) {
             .data => |*case| try writer.print("{any}", .{case.*}),
-            inline else => |*case| try formatRData(@TypeOf(case.*), case.*, fmt, options, writer),
+            inline else => |*case| try formatRData(@TypeOf(case.*), case.*, writer),
         }
     }
 };

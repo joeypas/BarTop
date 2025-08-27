@@ -12,7 +12,7 @@ pub fn CacheEntry(comptime T: type) type {
     };
 }
 pub fn EntryPool(comptime T: type) type {
-    return std.heap.MemoryPoolExtra(CacheEntry(T), .{ .alignment = @alignOf(CacheEntry(T)) });
+    return std.heap.MemoryPool(CacheEntry(T));
 }
 
 pub fn LRU(comptime T: type) type {
