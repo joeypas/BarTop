@@ -9,7 +9,31 @@ const ArrayList = std.ArrayList;
 const Name = rr.Name;
 const Type = rr.Type;
 
-fn initRData(T: type, comptime tag: Type, allocator: Allocator) RData {
+pub const RType = enum(u16) {
+    a = 1,
+    ns = 2,
+    cname = 5,
+    soa = 6,
+    ptr = 12,
+    mx = 15,
+    txt = 16,
+    aaaa = 28,
+    srv = 33,
+    //opt = 41,
+    rrsig = 46,
+    //nsec = 47,
+    dnskey = 48,
+    ds = 43,
+    sig = 24,
+    nsec3 = 50,
+    //ixfr = 251,
+    //axfr = 252,
+    //any = 255,
+    //caa = 257,
+    data = 0,
+};
+
+fn initRData(T: type, comptime tag: RType, allocator: Allocator) RData {
     var ret: T = undefined;
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -163,7 +187,7 @@ pub fn formatRData(comptime T: type, data: T, writer: *std.io.Writer) !void {
     }
 }
 
-pub const RData = union(Type) {
+pub const RData = union(RType) {
     // TODO:
     // 1. Implement printing support
     // 2. Full rdata type support
@@ -204,6 +228,7 @@ pub const RData = union(Type) {
         port: u16,
         target: Name,
     },
+    rrsig: DNSSEC.Sig,
     dnskey: DNSSEC.DnsKey,
     ds: DNSSEC.DS,
     sig: DNSSEC.Sig,
@@ -211,22 +236,11 @@ pub const RData = union(Type) {
     data: ArrayList(u8),
 
     pub fn init(allocator: Allocator, @"type": Type) RData {
-        return switch (@"type") {
-            inline .cname,
-            .ns,
-            .ptr,
-            .mx,
-            .txt,
-            .soa,
-            .srv,
-            .dnskey,
-            .ds,
-            .sig,
-            .nsec3,
-            => |t| return initRData(std.meta.TagPayload(RData, t), t, allocator),
+        return switch (getType(@"type")) {
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
-            else => RData{ .data = ArrayList(u8).init(allocator) },
+            .data => RData{ .data = ArrayList(u8).init(allocator) },
+            inline else => |t| initRData(std.meta.TagPayload(RData, t), t, allocator),
         };
     }
 
@@ -292,6 +306,7 @@ pub const RData = union(Type) {
 
                 return RData{ .data = array.toArrayList() };
             },
+            inline else => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, buffered_reader),
         }
     }
 

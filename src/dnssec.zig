@@ -80,3 +80,8 @@ pub const NSEC3 = struct {
     hash: ArrayList(u8),
     type_bitmap: ArrayList(u8),
 };
+
+pub const NSEC = struct {
+    next_name: rr.Name,
+    type_bitmap: ArrayList(u8),
+};

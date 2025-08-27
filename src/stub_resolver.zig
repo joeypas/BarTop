@@ -12,6 +12,9 @@ const LRU = @import("util/cache.zig").LRU;
 // 1. Implement Timeout/backup server to ask if timeout is too long
 // 2. Validate Messages
 // 3. Return correct errors when we encounter one
+// 4. Any resolver implemetations will now be stale since zig will be adding async,
+// so any implementations will need a rewrite once that is available
+// 5. Decide on a common api and naming for functions
 
 // Logging setup
 const level: std.log.Level = switch (@import("builtin").mode) {
@@ -85,6 +88,7 @@ pub const Thread = struct {
     context_pool: ContextPool,
     ext_context_pool: ExtContextPool,
     arena: std.heap.ArenaAllocator,
+    thread_pool: ?*xev.ThreadPool,
 
     pub fn init(allocator: Allocator, options: Options) !Thread {
         var loop = try xev.Loop.init(.{});
@@ -118,6 +122,7 @@ pub const Thread = struct {
             .context_pool = ContextPool.init(allocator),
             .ext_context_pool = ExtContextPool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
+            .thread_pool = thread_pool,
         };
     }
 
