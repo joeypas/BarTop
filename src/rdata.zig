@@ -9,31 +9,7 @@ const ArrayList = std.ArrayList;
 const Name = rr.Name;
 const Type = rr.Type;
 
-pub const RType = enum(u16) {
-    a = 1,
-    ns = 2,
-    cname = 5,
-    soa = 6,
-    ptr = 12,
-    mx = 15,
-    txt = 16,
-    aaaa = 28,
-    srv = 33,
-    //opt = 41,
-    rrsig = 46,
-    //nsec = 47,
-    dnskey = 48,
-    ds = 43,
-    sig = 24,
-    nsec3 = 50,
-    //ixfr = 251,
-    //axfr = 252,
-    //any = 255,
-    //caa = 257,
-    data = 0,
-};
-
-fn initRData(T: type, comptime tag: RType, allocator: Allocator) RData {
+fn initRData(T: type, comptime tag: Type, allocator: Allocator) RData {
     var ret: T = undefined;
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -81,7 +57,7 @@ fn decodeRData(T: type, comptime tag: Type, allocator: Allocator, size: usize, r
                         var array = try Writer.Allocating.initCapacity(allocator, @intCast(len));
                         errdefer array.deinit();
 
-                        _ = try reader.streamRemaining(&array.writer);
+                        _ = try reader.streamExact(&array.writer, @intCast(len));
                         @field(ret, field.name) = array.toArrayList();
                     } else {
                         var writer = try Writer.Allocating.initCapacity(allocator, size);
@@ -187,7 +163,7 @@ pub fn formatRData(comptime T: type, data: T, writer: *std.io.Writer) !void {
     }
 }
 
-pub const RData = union(RType) {
+pub const RData = union(Type) {
     // TODO:
     // 1. Implement printing support
     // 2. Full rdata type support
@@ -236,11 +212,22 @@ pub const RData = union(RType) {
     data: ArrayList(u8),
 
     pub fn init(allocator: Allocator, @"type": Type) RData {
-        return switch (getType(@"type")) {
+        return switch (@"type") {
+            inline .cname,
+            .ns,
+            .ptr,
+            .mx,
+            .txt,
+            .soa,
+            .srv,
+            .dnskey,
+            .ds,
+            .sig,
+            .nsec3,
+            => |t| return initRData(std.meta.TagPayload(RData, t), t, allocator),
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
-            .data => RData{ .data = ArrayList(u8).init(allocator) },
-            inline else => |t| initRData(std.meta.TagPayload(RData, t), t, allocator),
+            else => RData{ .data = .empty },
         };
     }
 
@@ -306,7 +293,6 @@ pub const RData = union(RType) {
 
                 return RData{ .data = array.toArrayList() };
             },
-            inline else => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, buffered_reader),
         }
     }
 
@@ -339,7 +325,7 @@ pub const RData = union(RType) {
         return switch (self.*) {
             .a => |*a| a.addr = try std.net.Ip4Address.parse(dat, 0),
             .aaaa => |*aaaa| aaaa.addr = try std.net.Ip6Address.parse(dat, 0),
-            .data => |*list| try list.appendSlice(dat),
+            .data => |*list| try list.appendSlice(allocator, dat),
             inline else => |*case| rdataFromString(@TypeOf(case.*), case, allocator, dat),
         };
     }

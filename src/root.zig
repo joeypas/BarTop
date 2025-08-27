@@ -4,6 +4,8 @@ pub const dnssec = @import("dnssec.zig");
 pub const util = @import("util/root.zig");
 pub const server = @import("stub_resolver.zig");
 const crypto = util.crypto;
+const Reader = std.Io.Reader;
+const Writer = std.Io.Writer;
 
 pub const Zone = @import("zone.zig").Zone;
 
@@ -11,20 +13,20 @@ const std = @import("std");
 test "name encode/decode" {
     const alloc = std.testing.allocator;
     var name = Message.Name.init(alloc);
-    defer name.deinit();
+    defer name.deinit(alloc);
 
     try name.parse("example.com");
     try std.testing.expectEqual(@as(u16, 13), name.getLen());
 
     var buf: [64]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const len = try name.encode(fbs.writer().any());
+    var fbs = Writer.fixed(&buf);
+    const len = try name.encode(&fbs);
+    try fbs.flush();
 
-    var fbr = std.io.fixedBufferStream(buf[0..len]);
-    var br = std.io.bufferedReader(fbr.reader().any());
+    var fbr = Reader.fixed(buf[0..len]);
 
-    var decoded = try Message.Name.decode(alloc, &br);
-    defer decoded.deinit();
+    var decoded = try Message.Name.decode(alloc, &fbr);
+    defer decoded.deinit(alloc);
 
     const got = try decoded.allocPrint(alloc);
     defer alloc.free(got);
@@ -52,13 +54,13 @@ test "header encode/decode" {
     };
 
     var buf: [12]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const len = try header.encode(fbs.writer().any());
+    var fbs = Writer.fixed(&buf);
+    const len = try header.encode(&fbs);
+    try fbs.flush();
     try std.testing.expectEqual(@as(usize, 12), len);
 
-    var fbr = std.io.fixedBufferStream(buf[0..len]);
-    var br = std.io.bufferedReader(fbr.reader().any());
-    const decoded = try Message.Header.decode(&br);
+    var fbr = Reader.fixed(buf[0..len]);
+    const decoded = try Message.Header.decode(&fbr);
 
     try std.testing.expectEqualDeep(header, decoded);
 }
@@ -66,7 +68,7 @@ test "header encode/decode" {
 test "record encode/decode" {
     const alloc = std.testing.allocator;
     var record = Message.Record.init(alloc, .a);
-    defer record.deinit();
+    defer record.deinit(alloc);
 
     try record.name.parse("example.com");
     record.ttl = 60;
@@ -74,14 +76,14 @@ test "record encode/decode" {
     record.rdlength = record.rdata.getLen();
 
     var buf: [128]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const len = try record.encode(fbs.writer().any());
+    var fbs = Writer.fixed(&buf);
+    const len = try record.encode(&fbs);
+    try fbs.flush();
 
-    var fbr = std.io.fixedBufferStream(buf[0..len]);
-    var br = std.io.bufferedReader(fbr.reader().any());
+    var fbr = Reader.fixed(buf[0..len]);
 
-    var decoded = try Message.Record.decode(alloc, &br);
-    defer decoded.deinit();
+    var decoded = try Message.Record.decode(alloc, &fbr);
+    defer decoded.deinit(alloc);
 
     const name1 = try record.name.allocPrint(alloc);
     defer alloc.free(name1);
@@ -123,12 +125,14 @@ test "message encode/decode" {
     a.ttl = 120;
     a.rdlength = a.rdata.getLen();
 
-    var buf: [512]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&buf);
-    const len = try msg.encode(fbs.writer().any());
+    var buf: [1024]u8 = undefined;
+    var fbs = Writer.fixed(&buf);
+    try msg.encode(&fbs);
+    const len = fbs.end;
+    defer fbs.flush() catch unreachable;
 
-    var fbr = std.io.fixedBufferStream(buf[0..len]);
-    var decoded = try Message.decode(alloc, fbr.reader().any());
+    var fbr = Reader.fixed(buf[0..len]);
+    var decoded = try Message.decode(alloc, &fbr);
     defer decoded.deinit();
 
     try std.testing.expectEqualDeep(msg.header, decoded.header);

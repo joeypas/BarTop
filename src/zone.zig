@@ -13,18 +13,18 @@ pub const Zone = struct {
         soa.ref = true;
         return Zone{
             .soa = soa,
-            .records = ArrayList(Message.Record).init(allocator),
+            .records = .empty,
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Zone) void {
         self.soa.ref = false;
-        self.soa.deinit();
+        self.soa.deinit(self.allocator);
         for (self.records.items) |*record| {
-            record.deinit();
+            record.deinit(self.allocator);
         }
-        self.records.deinit();
+        self.records.deinit(self.allocator);
     }
 
     pub fn getSoa(self: *Zone) *Message.Record {
@@ -33,12 +33,12 @@ pub const Zone = struct {
 
     /// Record becomes managed by the zone, it is freed on deinit
     pub fn addRecord(self: *Zone, record: Message.Record) !void {
-        try self.records.append(record);
+        try self.records.append(self.allocator, record);
     }
 
     /// Records become managed by the zone, they are freed on deinit
     pub fn addRecords(self: *Zone, records: []Message.Record) !void {
-        try self.records.appendSlice(records);
+        try self.records.appendSlice(self.allocator, records);
     }
 
     pub fn getRecords(self: *Zone) []const Message.Record {
@@ -84,8 +84,8 @@ const ZoneParser = struct {
 
         var lines = std.mem.splitAny(u8, content, "\n\r");
 
-        var multi_line_buffer = ArrayList(u8).init(self.allocator);
-        defer multi_line_buffer.deinit();
+        var multi_line_buffer: ArrayList(u8) = .empty;
+        defer multi_line_buffer.deinit(self.allocator);
         var in_parentheses = false;
 
         while (lines.next()) |line| {
@@ -112,8 +112,8 @@ const ZoneParser = struct {
                     in_parentheses = false;
                     continue;
                 }
-                try multi_line_buffer.appendSlice(cleaned);
-                try multi_line_buffer.append(' ');
+                try multi_line_buffer.appendSlice(self.allocator, cleaned);
+                try multi_line_buffer.append(self.allocator, ' ');
                 continue;
             }
 
@@ -122,7 +122,7 @@ const ZoneParser = struct {
                     const cleaned = std.mem.replaceOwned(u8, self.allocator, trimmed, ")", "") catch trimmed;
                     defer if (cleaned.ptr != trimmed.ptr) self.allocator.free(cleaned);
 
-                    try multi_line_buffer.appendSlice(cleaned);
+                    try multi_line_buffer.appendSlice(self.allocator, cleaned);
                     if (std.mem.indexOf(u8, trimmed, ";")) |comment_pos| {
                         trimmed = std.mem.trim(u8, trimmed[0..comment_pos], " \t");
                     }
@@ -132,8 +132,8 @@ const ZoneParser = struct {
                     multi_line_buffer.clearRetainingCapacity();
                     in_parentheses = false;
                 } else {
-                    try multi_line_buffer.appendSlice(trimmed);
-                    try multi_line_buffer.append(' ');
+                    try multi_line_buffer.appendSlice(self.allocator, trimmed);
+                    try multi_line_buffer.append(self.allocator, ' ');
                 }
                 continue;
             }
@@ -150,9 +150,9 @@ const ZoneParser = struct {
         }
 
         var record = try self.parseResourceRecord(line);
-        errdefer record.deinit();
+        errdefer record.deinit(self.allocator);
         if (record.type == .soa) {
-            self.zone.soa.deinit();
+            self.zone.soa.deinit(self.allocator);
             self.zone.soa = record;
             self.zone.soa.ref = true;
         } else {
@@ -162,13 +162,13 @@ const ZoneParser = struct {
 
     fn parseResourceRecord(self: *ZoneParser, line: []const u8) !Message.Record {
         var tokens = try self.tokenize(line);
-        defer tokens.deinit();
+        defer tokens.deinit(self.allocator);
 
         const rec = try self.collectFields(tokens);
         defer self.allocator.free(rec.data);
 
         var record = Message.Record.init(self.allocator, rec.type);
-        errdefer record.deinit();
+        errdefer record.deinit(self.allocator);
 
         self.last_name = rec.name;
         try record.name.parse(rec.name);
@@ -180,7 +180,7 @@ const ZoneParser = struct {
         record.ttl = rec.ttl;
         record.class = rec.class;
 
-        record.rdata.parse(rec.data) catch |err| {
+        record.rdata.parse(self.allocator, rec.data) catch |err| {
             std.debug.print("Err at: {s}\n", .{rec.data});
             return err;
         };
@@ -222,12 +222,12 @@ const ZoneParser = struct {
     };
 
     fn tokenize(self: *ZoneParser, line: []const u8) !ArrayList(Token) {
-        var ret = ArrayList(Token).init(self.allocator);
-        errdefer ret.deinit();
+        var ret: ArrayList(Token) = .empty;
+        errdefer ret.deinit(self.allocator);
         var tokens = std.mem.tokenizeAny(u8, line, " \t");
 
-        var data_buf = ArrayList(u8).init(self.allocator);
-        errdefer data_buf.deinit();
+        var data_buf: ArrayList(u8) = .empty;
+        errdefer data_buf.deinit(self.allocator);
 
         var got_type = false;
         var first = true;
@@ -235,31 +235,31 @@ const ZoneParser = struct {
             var buf: [255]u8 = undefined;
             if (std.ascii.isDigit(tok[0]) and got_type == false) {
                 const ttl = try std.fmt.parseInt(u32, tok, 10);
-                try ret.append(Token{ .ttl = ttl });
+                try ret.append(self.allocator, Token{ .ttl = ttl });
             } else if (tok[0] == '@') {
-                try ret.append(Token{ .name = null });
+                try ret.append(self.allocator, Token{ .name = null });
             } else if (std.meta.stringToEnum(Message.Class, std.ascii.lowerString(&buf, tok))) |class| {
-                try ret.append(Token{ .class = class });
+                try ret.append(self.allocator, Token{ .class = class });
             } else if (std.meta.stringToEnum(Message.Type, std.ascii.lowerString(&buf, tok))) |typ| {
                 // edge case where relative host name is also a type
                 if (!first) {
-                    try ret.append(Token{ .type = typ });
+                    try ret.append(self.allocator, Token{ .type = typ });
                     got_type = true;
                 } else {
-                    try ret.append(Token{ .name = tok });
+                    try ret.append(self.allocator, Token{ .name = tok });
                 }
             } else {
                 if (got_type) {
-                    try data_buf.appendSlice(tok);
-                    try data_buf.append(' ');
+                    try data_buf.appendSlice(self.allocator, tok);
+                    try data_buf.append(self.allocator, ' ');
                 } else {
-                    try ret.append(Token{ .name = tok });
+                    try ret.append(self.allocator, Token{ .name = tok });
                 }
             }
             first = false;
         }
 
-        try ret.append(Token{ .data = try data_buf.toOwnedSlice() });
+        try ret.append(self.allocator, Token{ .data = try data_buf.toOwnedSlice(self.allocator) });
 
         return ret;
     }
@@ -352,7 +352,7 @@ test "parse zone" {
     std.debug.print("Zone parsed successfully!\n", .{});
     std.debug.print("Number of records: {}\n", .{zone2.records.items.len});
     for (zone2.records.items) |record| {
-        std.debug.print("{s}\n", .{record});
+        std.debug.print("{f}\n", .{record});
     }
-    std.debug.print("{s}\n", .{zone2.soa});
+    std.debug.print("{f}\n", .{zone2.soa});
 }

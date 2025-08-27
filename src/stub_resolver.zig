@@ -88,7 +88,6 @@ pub const Thread = struct {
     context_pool: ContextPool,
     ext_context_pool: ExtContextPool,
     arena: std.heap.ArenaAllocator,
-    thread_pool: ?*xev.ThreadPool,
 
     pub fn init(allocator: Allocator, options: Options) !Thread {
         var loop = try xev.Loop.init(.{});
@@ -122,7 +121,6 @@ pub const Thread = struct {
             .context_pool = ContextPool.init(allocator),
             .ext_context_pool = ExtContextPool.init(allocator),
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .thread_pool = thread_pool,
         };
     }
 
