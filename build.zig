@@ -61,9 +61,11 @@ pub fn build(b: *std.Build) void {
 
     list[1] = b.addExecutable(.{
         .name = "StubResolver",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     //list[1].root_module.addImport("xev", xev.module("xev"));
@@ -71,9 +73,11 @@ pub fn build(b: *std.Build) void {
 
     list[2] = b.addExecutable(.{
         .name = "Client",
-        .root_source_file = b.path("src/client.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/client.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     list[2].root_module.addImport("clap", clap.module("clap"));
@@ -111,8 +115,6 @@ pub fn build(b: *std.Build) void {
 
     const lib_unit_tests = b.addTest(.{
         .root_module = dns,
-        .target = target,
-        .optimize = optimize,
     });
 
     const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);

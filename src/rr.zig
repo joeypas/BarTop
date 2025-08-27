@@ -1,8 +1,9 @@
 const std = @import("std");
-const Reader = @import("message.zig").Reader;
 const RData = @import("rdata.zig").RData;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
+const Reader = std.Io.Reader;
+const Writer = std.Io.Writer;
 
 /// Represents a Domain Name
 pub const Name = struct {
@@ -12,23 +13,23 @@ pub const Name = struct {
     pub fn init(allocator: Allocator) Name {
         return .{
             .allocator = allocator,
-            .labels = ArrayList(ArrayList(u8)).init(allocator),
+            .labels = .empty,
         };
     }
 
-    pub fn deinit(self: *Name) void {
-        for (self.labels.items) |label| {
-            label.deinit();
+    pub fn deinit(self: *Name, allocator: Allocator) void {
+        for (self.labels.items) |*label| {
+            label.deinit(allocator);
         }
 
-        self.labels.deinit();
+        self.labels.deinit(allocator);
     }
 
     pub fn addLabel(self: *Name, label: []const u8) !void {
         var array = try ArrayList(u8).initCapacity(self.allocator, label.len);
-        errdefer array.deinit();
+        errdefer array.deinit(self.allocator);
         array.appendSliceAssumeCapacity(label);
-        try self.labels.append(array);
+        try self.labels.append(self.allocator, array);
     }
 
     pub fn getLen(self: *Name) u16 {
@@ -44,23 +45,21 @@ pub const Name = struct {
         return len;
     }
 
-    fn checkPointer(allocator: Allocator, labels: *ArrayList(ArrayList(u8)), buffered_reader: *Reader) !bool {
-        if (buffered_reader.end - buffered_reader.start >= 2) {
-            const buf = buffered_reader.buf[buffered_reader.start .. buffered_reader.start + 2];
+    fn checkPointer(allocator: Allocator, labels: *ArrayList(ArrayList(u8)), reader: *Reader) !bool {
+        if (reader.end - reader.seek >= 2) {
+            const buf = reader.buffer[reader.seek .. reader.seek + 2];
             const pointer = buf[0];
             if (pointer >= 0xC0) {
                 const ptr = std.mem.readInt(u16, buf[0..2], .big);
                 const offset = @as(usize, ptr & 0x3FFF);
-                try buffered_reader.reader().skipBytes(2, .{});
-                var fbs = std.io.fixedBufferStream(buffered_reader.buf[offset..]);
-                var reader = fbs.reader();
-                var size = try reader.readByte();
+                try reader.discardAll(2);
+                var fbs = std.Io.Reader.fixed(reader.buffer[offset..]);
+                var size = try fbs.takeByte();
                 while (size != 0x00) {
-                    var array = try ArrayList(u8).initCapacity(allocator, @intCast(size));
-                    const bytes = array.addManyAsSliceAssumeCapacity(@intCast(size));
-                    _ = try reader.read(bytes);
-                    try labels.append(array);
-                    size = try reader.readByte();
+                    var writer = try Writer.Allocating.initCapacity(allocator, @intCast(size));
+                    _ = try fbs.streamExact(&writer.writer, @intCast(size));
+                    try labels.append(allocator, writer.toArrayList());
+                    size = try fbs.takeByte();
                 }
                 return true;
             }
@@ -69,27 +68,24 @@ pub const Name = struct {
         return false;
     }
 
-    pub fn decode(allocator: Allocator, buffered_reader: *Reader) !Name {
-        var reader = buffered_reader.reader();
+    pub fn decode(allocator: Allocator, reader: *Reader) !Name {
+        var labels: ArrayList(ArrayList(u8)) = .empty;
 
-        var labels = ArrayList(ArrayList(u8)).init(allocator);
-
-        if (try checkPointer(allocator, &labels, buffered_reader)) {
+        if (try checkPointer(allocator, &labels, reader)) {
             return Name{
                 .allocator = allocator,
                 .labels = labels,
             };
         }
 
-        var size = try reader.readByte();
+        var size = try reader.takeByte();
 
         while (size != 0) {
-            var array = try ArrayList(u8).initCapacity(allocator, @intCast(size));
-            const bytes = array.addManyAsSliceAssumeCapacity(@intCast(size));
-            _ = try reader.read(bytes);
-            try labels.append(array);
-            if (try checkPointer(allocator, &labels, buffered_reader)) break;
-            size = try reader.readByte();
+            var array = try Writer.Allocating.initCapacity(allocator, @intCast(size));
+            try reader.streamExact(&array.writer, @intCast(size));
+            try labels.append(allocator, array.toArrayList());
+            if (try checkPointer(allocator, &labels, reader)) break;
+            size = try reader.takeByte();
         }
 
         return Name{
@@ -98,7 +94,7 @@ pub const Name = struct {
         };
     }
 
-    pub fn encode(self: *Name, writer: std.io.AnyWriter) !usize {
+    pub fn encode(self: *Name, writer: *Writer) !usize {
         var len: usize = 0;
         for (self.labels.items) |label| {
             try writer.writeByte(@truncate(label.items.len));
@@ -114,7 +110,7 @@ pub const Name = struct {
 
     pub fn copy(self: *Name, other: *Name) !void {
         for (other.labels.items) |*item| {
-            try self.labels.append(try item.clone());
+            try self.labels.append(self.allocator, try item.clone());
         }
     }
 
@@ -143,19 +139,16 @@ pub const Name = struct {
     }
 
     pub fn allocPrint(self: *Name, allocator: Allocator) ![]u8 {
-        var ret = ArrayList(u8).init(allocator);
+        var ret: ArrayList(u8) = .empty;
         for (self.labels.items) |*item| {
-            try ret.appendSlice(item.items);
-            try ret.append('.');
+            try ret.appendSlice(allocator, item.items);
+            try ret.append(allocator, '.');
         }
 
-        return ret.toOwnedSlice();
+        return ret.toOwnedSlice(allocator);
     }
 
-    pub fn format(self: Name, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Name, writer: *std.io.Writer) !void {
         for (self.labels.items) |item| {
             try writer.print("{s}.", .{item.items});
         }
@@ -168,10 +161,10 @@ pub const Name = struct {
         while (itr.next()) |part| {
             if (part.len == 0) continue;
             var array = try ArrayList(u8).initCapacity(self.allocator, name.len);
-            errdefer array.deinit();
+            errdefer array.deinit(self.allocator);
             const slice = array.addManyAsSliceAssumeCapacity(part.len);
             @memcpy(slice[0..], part);
-            try self.labels.append(array);
+            try self.labels.append(self.allocator, array);
         }
     }
 
@@ -231,20 +224,20 @@ pub const Question = struct {
         };
     }
 
-    pub fn deinit(self: *Question) void {
-        if (!self.ref) self.qname.deinit();
+    pub fn deinit(self: *Question, allocator: Allocator) void {
+        if (!self.ref) self.qname.deinit(allocator);
     }
 
-    pub fn decode(allocator: Allocator, buffered_reader: *Reader) !Question {
+    pub fn decode(allocator: Allocator, reader: *Reader) !Question {
         return Question{
             .allocator = allocator,
-            .qname = Name.decode(allocator, buffered_reader) catch unreachable,
-            .qtype = @enumFromInt(try buffered_reader.reader().readInt(u16, .big)),
-            .qclass = @enumFromInt(try buffered_reader.reader().readInt(u16, .big)),
+            .qname = Name.decode(allocator, reader) catch unreachable,
+            .qtype = @enumFromInt(try reader.takeInt(u16, .big)),
+            .qclass = @enumFromInt(try reader.takeInt(u16, .big)),
         };
     }
 
-    pub fn encode(self: *Question, writer: std.io.AnyWriter) !usize {
+    pub fn encode(self: *Question, writer: *Writer) !usize {
         var len: usize = 0;
         len += try self.qname.encode(writer);
         try writer.writeInt(u16, @intFromEnum(self.qtype), .big);
@@ -268,7 +261,7 @@ pub const Question = struct {
         return std.fmt.bufPrint(
             buf,
             \\Question: [
-            \\  qname: {},
+            \\  qname: {f},
             \\  qtype: {any},
             \\  qclass: {any},
             \\],
@@ -277,13 +270,10 @@ pub const Question = struct {
         );
     }
 
-    pub fn format(self: Question, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Question, writer: *std.io.Writer) !void {
         try writer.print(
             \\Question: [
-            \\  qname: {},
+            \\  qname: {f},
             \\  qtype: {any},
             \\  qclass: {any},
             \\],
@@ -312,22 +302,21 @@ pub const Record = struct {
         };
     }
 
-    pub fn deinit(self: *Record) void {
+    pub fn deinit(self: *Record, allocator: Allocator) void {
         if (!self.ref) {
-            self.name.deinit();
-            self.rdata.deinit();
+            self.name.deinit(allocator);
+            self.rdata.deinit(allocator);
         }
     }
 
-    pub fn decode(allocator: Allocator, buffered_reader: *Reader) !Record {
-        var reader = buffered_reader.reader();
-        const name = try Name.decode(allocator, buffered_reader);
-        const type_: Type = @enumFromInt(try reader.readInt(u16, .big));
-        const class: Class = @enumFromInt(try reader.readInt(u16, .big));
-        const ttl = try reader.readInt(u32, .big);
-        var rdlength = try reader.readInt(u16, .big);
+    pub fn decode(allocator: Allocator, reader: *Reader) !Record {
+        const name = try Name.decode(allocator, reader);
+        const type_: Type = @enumFromInt(try reader.takeInt(u16, .big));
+        const class: Class = @enumFromInt(try reader.takeInt(u16, .big));
+        const ttl = try reader.takeInt(u32, .big);
+        var rdlength = try reader.takeInt(u16, .big);
 
-        var rdata = try RData.decode(allocator, type_, @intCast(rdlength), buffered_reader);
+        var rdata = try RData.decode(allocator, type_, @intCast(rdlength), reader);
 
         rdlength = rdata.getLen();
 
@@ -342,7 +331,7 @@ pub const Record = struct {
         };
     }
 
-    pub fn encode(self: *Record, writer: std.io.AnyWriter) !usize {
+    pub fn encode(self: *Record, writer: *Writer) !usize {
         var len: usize = 0;
 
         len += try self.name.encode(writer);
@@ -375,18 +364,15 @@ pub const Record = struct {
         );
     }
 
-    pub fn format(self: Record, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: Record, writer: *std.io.Writer) !void {
         try writer.print(
             \\Record: [
-            \\  name: {},
+            \\  name: {f},
             \\  type: {any},
             \\  class: {any},
             \\  ttl: {d},
             \\  rdlength: {d},
-            \\  rdata: {},
+            \\  rdata: {f},
             \\],
         ,
             .{ self.name, self.type, self.class, self.ttl, self.rdlength, self.rdata },
