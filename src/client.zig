@@ -17,7 +17,9 @@ pub fn getQname(allocator: std.mem.Allocator) ![]const u8 {
         .allocator = allocator,
     }) catch |err| {
         // Report useful error and exit
-        diag.report(std.io.getStdErr().writer(), err) catch {};
+        var stderr_fd = std.fs.File.stderr();
+        defer stderr_fd.close();
+        diag.reportToFile(stderr_fd, err) catch {};
         return err;
     };
     defer res.deinit();
@@ -38,7 +40,7 @@ pub fn getQname(allocator: std.mem.Allocator) ![]const u8 {
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
     var message = dns.Message.init(allocator);
     defer message.deinit();
@@ -72,8 +74,10 @@ pub fn main() !void {
     question.*.qclass = .in;
 
     var data_buf: [512]u8 = undefined;
-    var fbs = std.io.fixedBufferStream(&data_buf);
-    const data = try message.encode(fbs.writer().any());
+    var writer = std.Io.Writer.fixed(&data_buf);
+    try message.encode(&writer);
+    const data = writer.end;
+    try writer.flush();
     std.debug.print("Data len: {d}\n", .{data});
     const addr = try std.net.Address.parseIp("127.0.0.1", 53);
     const sock = try std.posix.socket(
@@ -90,8 +94,8 @@ pub fn main() !void {
 
     const recv_bytes = try std.posix.recv(sock, buf[0..], 0);
 
-    var fbr = std.io.fixedBufferStream(buf[0..recv_bytes]);
-    var message_data = try dns.Message.decode(allocator, fbr.reader().any());
+    var fbr = std.Io.Reader.fixed(buf[0..recv_bytes]);
+    var message_data = try dns.Message.decode(allocator, &fbr);
     defer message_data.deinit();
 
     if (message.header.id != message.header.id) {
@@ -104,8 +108,6 @@ pub fn main() !void {
             .{std.meta.fieldNames(dns.Flags)[@intFromEnum(message.header.flags.response_code)]},
         );
     } else {
-        const decoded = try message.allocPrint(allocator);
-        defer allocator.free(decoded);
-        std.debug.print("RECIEVED=>\n{s}\n", .{decoded});
+        std.debug.print("RECIEVED=>\n{f}\n", .{message});
     }
 }

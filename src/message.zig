@@ -5,8 +5,8 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const Arena = std.heap.ArenaAllocator;
 
-pub const Reader = std.io.BufferedReader(4096, std.io.AnyReader);
-const Writer = std.io.BufferedWriter(4096, std.io.AnyWriter);
+pub const Reader = std.Io.Reader;
+const Writer = std.Io.Writer;
 
 pub const Message = @This();
 
@@ -31,73 +31,71 @@ pub fn init(allocator: Allocator) Message {
     return .{
         .allocator = allocator,
         .header = .{},
-        .questions = ArrayList(Question).init(allocator),
-        .answers = ArrayList(Record).init(allocator),
-        .authorities = ArrayList(Record).init(allocator),
-        .additionals = ArrayList(Record).init(allocator),
+        .questions = .empty,
+        .answers = .empty,
+        .authorities = .empty,
+        .additionals = .empty,
     };
 }
 
 pub fn deinit(self: *Message) void {
     if (!self.ref) {
         for (self.questions.items) |*question| {
-            question.deinit();
+            question.deinit(self.allocator);
         }
     }
-    self.questions.deinit();
+    self.questions.deinit(self.allocator);
 
     if (!self.ref) {
         for (self.answers.items) |*answer| {
-            answer.deinit();
+            answer.deinit(self.allocator);
         }
     }
-    self.answers.deinit();
+    self.answers.deinit(self.allocator);
 
     if (!self.ref) {
         for (self.authorities.items) |*answer| {
-            answer.deinit();
+            answer.deinit(self.allocator);
         }
     }
-    self.authorities.deinit();
+    self.authorities.deinit(self.allocator);
 
     if (!self.ref) {
         for (self.additionals.items) |*answer| {
-            answer.deinit();
+            answer.deinit(self.allocator);
         }
     }
-    self.additionals.deinit();
+    self.additionals.deinit(self.allocator);
 }
 
-pub fn decode(allocator: Allocator, reader: std.io.AnyReader) !Message {
-    var buf_reader = std.io.bufferedReader(reader);
-
-    const header = try Header.decode(&buf_reader);
-    var questions = ArrayList(Question).init(allocator);
+pub fn decode(allocator: Allocator, reader: *Reader) !Message {
+    const header = try Header.decode(reader);
+    var questions: ArrayList(Question) = .empty;
 
     for (0..header.qd_count) |_| {
-        const question = try questions.addOne();
-        question.* = try Question.decode(allocator, &buf_reader);
+        const question = try questions.addOne(allocator);
+        question.* = try Question.decode(allocator, reader);
     }
 
-    var answers = ArrayList(Record).init(allocator);
+    var answers: ArrayList(Record) = .empty;
 
     for (0..header.an_count) |_| {
-        const answer = try answers.addOne();
-        answer.* = try Record.decode(allocator, &buf_reader);
+        const answer = try answers.addOne(allocator);
+        answer.* = try Record.decode(allocator, reader);
     }
 
-    var authorities = ArrayList(Record).init(allocator);
+    var authorities: ArrayList(Record) = .empty;
 
     for (0..header.ns_count) |_| {
-        const authority = try authorities.addOne();
-        authority.* = try Record.decode(allocator, &buf_reader);
+        const authority = try authorities.addOne(allocator);
+        authority.* = try Record.decode(allocator, reader);
     }
 
-    var additionals = ArrayList(Record).init(allocator);
+    var additionals: ArrayList(Record) = .empty;
 
     for (0..header.ar_count) |_| {
-        const additional = try additionals.addOne();
-        additional.* = try Record.decode(allocator, &buf_reader);
+        const additional = try additionals.addOne(allocator);
+        additional.* = try Record.decode(allocator, reader);
     }
 
     return Message{
@@ -110,50 +108,46 @@ pub fn decode(allocator: Allocator, reader: std.io.AnyReader) !Message {
     };
 }
 
-pub fn encode(self: *Message, writer: std.io.AnyWriter) !usize {
-    var c_writer = std.io.countingWriter(writer);
-
-    _ = try self.header.encode(c_writer.writer().any());
+pub fn encode(self: *Message, writer: *Writer) !void {
+    _ = try self.header.encode(writer);
 
     for (self.questions.items) |*question| {
-        _ = try question.encode(c_writer.writer().any());
+        _ = try question.encode(writer);
     }
 
     for (self.answers.items) |*answer| {
-        _ = try answer.encode(c_writer.writer().any());
+        _ = try answer.encode(writer);
     }
 
     for (self.authorities.items) |*authority| {
-        _ = try authority.encode(c_writer.writer().any());
+        _ = try authority.encode(writer);
     }
 
     for (self.additionals.items) |*additional| {
-        _ = try additional.encode(c_writer.writer().any());
+        _ = try additional.encode(writer);
     }
-
-    return c_writer.bytes_written;
 }
 
 pub fn addQuestion(self: *Message) !*Question {
-    const q = try self.questions.addOne();
+    const q = try self.questions.addOne(self.allocator);
     q.* = Question.init(self.allocator);
     return q;
 }
 
 pub fn addAnswer(self: *Message, rtype: Type) !*Record {
-    const a = try self.answers.addOne();
+    const a = try self.answers.addOne(self.allocator);
     a.* = Record.init(self.allocator, rtype);
     return a;
 }
 
 pub fn addAuthority(self: *Message, rtype: Type) !*Record {
-    const a = try self.answers.addOne();
+    const a = try self.answers.addOne(self.allocator);
     a.* = Record.init(self.allocator, rtype);
     return a;
 }
 
 pub fn addAdditional(self: *Message, rtype: Type) !*Record {
-    const a = try self.answers.addOne();
+    const a = try self.answers.addOne(self.allocator);
     a.* = Record.init(self.allocator, rtype);
     return a;
 }
@@ -188,26 +182,23 @@ pub fn allocPrint(self: *Message, allocator: Allocator) ![]u8 {
     return array.toOwnedSlice();
 }
 
-pub fn format(self: Message, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = options;
-
-    try writer.print("{s}\n", .{self.header});
+pub fn format(self: Message, writer: *std.io.Writer) !void {
+    try writer.print("{f}\n", .{self.header});
 
     for (self.questions.items) |question| {
-        try writer.print("{s}\n", .{question});
+        try writer.print("{f}\n", .{question});
     }
 
     for (self.answers.items) |*record| {
-        try writer.print("{s}\n", .{record});
+        try writer.print("{f}\n", .{record});
     }
 
     for (self.authorities.items) |*record| {
-        try writer.print("{s}\n", .{record});
+        try writer.print("{f}\n", .{record});
     }
 
     for (self.additionals.items) |*record| {
-        try writer.print("{s}\n", .{record});
+        try writer.print("{f}\n", .{record});
     }
 }
 
@@ -254,19 +245,18 @@ pub const Header = packed struct {
     // Additional count
     ar_count: u16 = 0,
 
-    pub fn decode(buffered_reader: *Reader) !Header {
-        var reader = buffered_reader.reader();
+    pub fn decode(reader: *Reader) !Header {
         return Header{
-            .id = try reader.readInt(u16, .big),
-            .flags = @bitCast(try reader.readInt(u16, .big)),
-            .qd_count = try reader.readInt(u16, .big),
-            .an_count = try reader.readInt(u16, .big),
-            .ns_count = try reader.readInt(u16, .big),
-            .ar_count = try reader.readInt(u16, .big),
+            .id = try reader.takeInt(u16, .big),
+            .flags = @bitCast(try reader.takeInt(u16, .big)),
+            .qd_count = try reader.takeInt(u16, .big),
+            .an_count = try reader.takeInt(u16, .big),
+            .ns_count = try reader.takeInt(u16, .big),
+            .ar_count = try reader.takeInt(u16, .big),
         };
     }
 
-    pub fn encode(self: *Header, writer: std.io.AnyWriter) !usize {
+    pub fn encode(self: *Header, writer: *Writer) !usize {
         try writer.writeInt(u16, self.id, .big);
         try writer.writeInt(u16, @bitCast(self.flags), .big);
         try writer.writeInt(u16, self.qd_count, .big);
@@ -292,9 +282,7 @@ pub const Header = packed struct {
         );
     }
 
-    pub fn format(self: Header, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Header, writer: *std.io.Writer) !void {
         try writer.print(
             \\Header: [
             \\  id: {d},
