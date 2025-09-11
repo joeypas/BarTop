@@ -87,7 +87,7 @@ pub const Thread = struct {
     c_timer: xev.Completion = .{},
     context_pool: ContextPool,
     ext_context_pool: ExtContextPool,
-    arena: std.heap.ArenaAllocator,
+    allocator: Allocator,
 
     pub fn init(allocator: Allocator, options: Options) !Thread {
         var loop = try xev.Loop.init(.{});
@@ -120,17 +120,20 @@ pub const Thread = struct {
             .timer = timer,
             .context_pool = ContextPool.init(allocator),
             .ext_context_pool = ExtContextPool.init(allocator),
-            .arena = std.heap.ArenaAllocator.init(allocator),
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Thread) void {
+        var itr = self.dns_cache.map.valueIterator();
+        while (itr.next()) |entry| {
+            entry.*.value.deinit();
+        }
         self.dns_cache.deinit();
         self.context_pool.deinit();
         self.ext_context_pool.deinit();
         self.notifier.deinit();
         self.shutdown_notifier.deinit();
-        self.arena.deinit();
         log.debug("Thread {d}: destroyed", .{self.id});
     }
 
@@ -288,6 +291,8 @@ pub const Thread = struct {
                 };
             } else {
                 log.debug("Cancelled", .{});
+                context.message.deinit();
+                context.question.deinit();
                 context.cancel_timer.deinit();
                 context.self.context_pool.destroy(context);
                 return .disarm;
@@ -344,6 +349,8 @@ pub const Thread = struct {
                     };
                     const server = user_data.?;
                     log.debug("Wrote DNS Packet:\n{f}", .{server.message});
+                    server.message.deinit();
+                    server.question.deinit();
                     server.cancel_timer.deinit();
                     server.self.context_pool.destroy(server);
                     return .disarm;
@@ -357,11 +364,10 @@ pub const Thread = struct {
         context: *AsyncContext,
         buf: []u8,
     ) !void {
-        const allocator = self.arena.allocator();
         var reader = std.Io.Reader.fixed(buf);
 
-        context.question = try Message.Message.decode(allocator, &reader);
-        context.message = Message.Message.init(allocator);
+        context.question = try Message.Message.decode(self.allocator, &reader);
+        context.message = Message.Message.init(self.allocator);
         context.message.ref = true;
 
         errdefer context.question.deinit();
@@ -466,7 +472,7 @@ pub const Thread = struct {
             }
         }
 
-        if (!did_ask and !context.canceled) try self.notifier.notify();
+        if (!did_ask) try self.notifier.notify();
     }
 
     fn externalWriteCallback(
@@ -515,9 +521,8 @@ pub const Thread = struct {
         var tmp_reader = std.Io.Reader.fixed(buf.slice[0..len]);
         if (ud) |user_data| {
             defer user_data.self.ext_context_pool.destroy(user_data);
-            const allocator = user_data.self.arena.allocator();
             const res = Message.Message.decode(
-                allocator,
+                user_data.self.allocator,
                 &tmp_reader,
             ) catch |err| {
                 log.err("Error decoding external message: {}", .{err});

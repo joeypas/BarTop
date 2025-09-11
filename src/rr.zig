@@ -47,18 +47,21 @@ pub const Name = struct {
 
     fn checkPointer(allocator: Allocator, labels: *ArrayList(ArrayList(u8)), reader: *Reader) !bool {
         if (reader.end - reader.seek >= 2) {
-            const buf = reader.buffer[reader.seek .. reader.seek + 2];
+            const buf = try reader.peek(2);
             const pointer = buf[0];
             if (pointer >= 0xC0) {
-                const ptr = std.mem.readInt(u16, buf[0..2], .big);
+                const ptr = try reader.takeInt(u16, .big);
                 const offset = @as(usize, ptr & 0x3FFF);
-                try reader.discardAll(2);
-                var fbs = std.Io.Reader.fixed(reader.buffer[offset..]);
+                var fbs = std.Io.Reader.fixed(reader.buffer[0..]);
+                fbs.seek = offset;
                 var size = try fbs.takeByte();
                 while (size != 0x00) {
                     var writer = try Writer.Allocating.initCapacity(allocator, @intCast(size));
-                    _ = try fbs.streamExact(&writer.writer, @intCast(size));
+                    errdefer writer.deinit();
+                    try fbs.streamExact(&writer.writer, @intCast(size));
                     try labels.append(allocator, writer.toArrayList());
+                    // Edge case where a pointer points to another pointer
+                    if (try checkPointer(allocator, labels, &fbs)) break;
                     size = try fbs.takeByte();
                 }
                 return true;
