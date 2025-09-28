@@ -58,7 +58,7 @@ const AsyncContext = struct {
 
 const ExternalContext = struct {
     self: *Thread,
-    qname_hash: u64,
+    qname_hash: [BUFFER_SIZE]u8 = undefined,
     message: *Message.Message,
     recv_buf: [BUFFER_SIZE]u8 = undefined,
     send_buf: [BUFFER_SIZE]u8 = undefined,
@@ -125,9 +125,11 @@ pub const Thread = struct {
     }
 
     pub fn deinit(self: *Thread) void {
-        var itr = self.dns_cache.map.valueIterator();
-        while (itr.next()) |entry| {
+        var head = self.dns_cache.head();
+        while (head) |entry| {
             entry.*.value.deinit();
+            self.allocator.free(entry.*.key);
+            head = entry.next();
         }
         self.dns_cache.deinit();
         self.context_pool.deinit();
@@ -196,40 +198,43 @@ pub const Thread = struct {
         var self = self_.?;
         _ = result catch return .rearm;
 
-        var itr = self.dns_cache.map.valueIterator();
+        var head = self.dns_cache.head();
         var removed_any = false;
 
-        while (itr.next()) |value| {
+        while (head) |value| {
             for (value.*.value.answers.items) |*item| {
                 if (item.ttl == 0) {
-                    value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
                     removed_any = true;
                     break;
                 }
                 item.ttl -= 1;
             }
-            if (removed_any) continue;
+            if (removed_any) {
+                head = value.next();
+                continue;
+            }
             for (value.*.value.authorities.items) |*item| {
                 if (item.ttl == 0) {
-                    value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
                     removed_any = true;
                     break;
                 }
                 item.ttl -= 1;
             }
-            if (removed_any) continue;
+            if (removed_any) {
+                head = value.next();
+                continue;
+            }
             for (value.*.value.additionals.items) |*item| {
                 if (item.ttl == 0) {
-                    value.*.value.deinit();
                     self.dns_cache.remove(value.*.key);
                     removed_any = true;
                     break;
                 }
                 item.ttl -= 1;
             }
-            if (removed_any) continue;
+            head = value.next();
         }
 
         self.timer.run(loop, &self.c_timer, 1000, Thread, self, timerCallback);
@@ -439,10 +444,9 @@ pub const Thread = struct {
             var qname_buf: [BUFFER_SIZE]u8 = undefined;
             // Add the question type so we don't accidentally get a cache entry for
             // another type of question
-            const qname = try question.qname.print(&qname_buf, question.qtype);
-            const qname_hash = hashFn(qname);
+            const qname = try question.qname.print(qname_buf[0..], question.qtype);
 
-            if (self.dns_cache.get(qname_hash)) |*cached_response| {
+            if (self.dns_cache.get(&qname_buf)) |*cached_response| {
                 log.debug("Cache hit for {s}", .{qname});
 
                 // Add cached records to our response
@@ -450,13 +454,13 @@ pub const Thread = struct {
             } else {
                 if (!context.canceled) {
                     log.debug("Not found in local store, querying external server...", .{});
-                    const ext_context = try self.ext_context_pool.create();
+                    const ext_context: *ExternalContext = try self.ext_context_pool.create();
                     ext_context.* = ExternalContext{
                         .self = self,
                         .message = &context.message,
-                        .qname_hash = qname_hash,
                     };
                     @memcpy(ext_context.send_buf[0..query.len], query);
+                    @memcpy(ext_context.qname_hash[0..], qname_buf[0..]);
                     self.ext_udp.write(
                         &self.loop,
                         &ext_context.completion,
@@ -535,7 +539,7 @@ pub const Thread = struct {
                 return .disarm;
             };
 
-            user_data.self.dns_cache.put(user_data.qname_hash, res) catch |err| {
+            user_data.self.dns_cache.put(&user_data.qname_hash, res) catch |err| {
                 log.err("Error storing message in cache: {}", .{err});
             };
 
