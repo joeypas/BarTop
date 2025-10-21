@@ -580,9 +580,7 @@ pub fn StubResolver(comptime options: Options) type {
             }
 
             var running = true;
-            var buffer: [1024]u8 = undefined;
-            var stdin_fd = std.fs.File.stdin();
-            var stdin = stdin_fd.reader(&buffer);
+            var stdin = std.fs.File.stdin();
             while (running) {
                 var in: [1024]u8 = undefined;
                 const len = try stdin.read(&in);
@@ -594,7 +592,7 @@ pub fn StubResolver(comptime options: Options) type {
                     running = false;
                 }
             }
-            stdin_fd.close();
+            stdin.close();
             for (workers) |worker| {
                 worker.join();
                 log.debug("Thread joined", .{});
