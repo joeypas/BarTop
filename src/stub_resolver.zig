@@ -438,7 +438,7 @@ pub const Thread = struct {
 
         var did_ask = false;
 
-        log.debug("Received DNS Packet:\n{f}", .{context.question});
+        log.debug("Received DNS Packet:  \n{f}", .{context.question});
 
         for (context.question.questions.items) |*question| {
             var qname_buf: [BUFFER_SIZE]u8 = undefined;

@@ -234,7 +234,7 @@ pub const Question = struct {
     pub fn decode(allocator: Allocator, reader: *Reader) !Question {
         return Question{
             .allocator = allocator,
-            .qname = Name.decode(allocator, reader) catch unreachable,
+            .qname = try Name.decode(allocator, reader),
             .qtype = @enumFromInt(try reader.takeInt(u16, .big)),
             .qclass = @enumFromInt(try reader.takeInt(u16, .big)),
         };
