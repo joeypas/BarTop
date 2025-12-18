@@ -23,10 +23,6 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .libxev = .{
-            .url = "git+https://github.com/zen-eth/libxev.git?ref=0.15.1#68f5dc7c512269d83b952d4bbda94c3c1bf4e4c6",
-            .hash = "libxev-0.0.0-86vtc2odEwBDzC8p8WoJl4IPhkBGNijDyppIFakxEzaL",
-        },
         .clap = .{
             .url = "git+https://github.com/Hejsil/zig-clap#5289e0753cd274d65344bef1c114284c633536ea",
             .hash = "clap-0.11.0-oBajB-HnAQDPCKYzwF7rO3qDFwRcD39Q0DALlTSz5H7e",
@@ -34,6 +30,14 @@
         .openssl = .{
             .url = "git+https://github.com/dzfrias/openssl-zig#2fbf20e414d6e09f1e1a30a5a831cf4aad87a2b6",
             .hash = "openssl-3.4.0-YymhPpDhAABAHYWqHr3POORyDXLqD_UhTTN6sMfxcHdl",
+        },
+        .zio = .{
+            .url = "git+https://github.com/lalinsky/zio#1e427e67f030ad5a943b92737aeab5bd9c16ae4d",
+            .hash = "zio-0.4.0-xHbVVHVSCQCgJoz_m3toOyW3YxviF506_BFoR_whPXRR",
+        },
+        .libxev = .{
+            .url = "git+https://github.com/mitchellh/libxev#a86bdc692b384f692a99047466ec89c3705d861c",
+            .hash = "libxev-0.0.0-86vtcz8bEwB9PLXxMMckZwulRxoKleuLsrffobuUv993",
         },
     },
     .paths = .{

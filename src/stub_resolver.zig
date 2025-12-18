@@ -709,7 +709,7 @@ pub fn run() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var server = try StubResolver(.{ .bind_port = 5533, .external_server = "8.8.8.8" }).init(allocator);
+    var server = try StubResolver(.{ .bind_port = 5533, .external_server = "8.8.8.8", .thread_count = 1 }).init(allocator);
     defer server.deinit();
 
     try server.run();

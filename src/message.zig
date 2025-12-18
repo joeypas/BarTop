@@ -18,6 +18,7 @@ pub const Type = rr.Type;
 pub const Class = rr.Class;
 pub const Name = rr.Name;
 
+buffer: [4096]u8 = undefined,
 allocator: Allocator,
 header: Header,
 questions: ArrayList(Question),
@@ -66,6 +67,10 @@ pub fn deinit(self: *Message) void {
         }
     }
     self.additionals.deinit(self.allocator);
+}
+
+pub fn getBuffer(self: *Message) []u8 {
+    return &self.buffer;
 }
 
 pub fn decode(allocator: Allocator, reader: *Reader) !Message {

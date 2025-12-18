@@ -19,6 +19,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const zio = b.dependency("zio", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const xev = b.dependency("libxev", .{
         .target = target,
         .optimize = optimize,
@@ -37,12 +41,12 @@ pub fn build(b: *std.Build) void {
     });
 
     dns.addImport("xev", xev.module("xev"));
+    dns.addImport("zio", zio.module("zio"));
 
     dns.linkLibrary(openssl.artifact("crypto"));
     //dns.linkLibrary(openssl.artifact("ssl"));
     dns.addIncludePath(openssl.artifact("crypto").getEmittedIncludeTree());
     dns.addIncludePath(openssl.artifact("ssl").getEmittedIncludeTree());
-
     list[0] = b.addLibrary(.{
         .name = "dns",
         .root_module = dns,
