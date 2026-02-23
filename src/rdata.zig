@@ -118,6 +118,30 @@ fn getLenRData(comptime T: type, data: *T) u16 {
     }
 }
 
+fn cloneRData(comptime T: type, comptime tag: Type, data: *const T, allocator: Allocator) !RData {
+    var ret: T = undefined;
+    switch (@typeInfo(T)) {
+        .@"struct" => |info| {
+            inline for (info.fields) |field| {
+                const src = @field(data, field.name);
+                if (std.meta.hasFn(field.type, "clone")) {
+                    const clone_fn = @TypeOf(field.type.clone);
+                    const params = @typeInfo(clone_fn).@"fn".params;
+                    if (params.len == 2) {
+                        @field(ret, field.name) = try src.clone(allocator);
+                    } else {
+                        @field(ret, field.name) = try src.clone();
+                    }
+                } else {
+                    @field(ret, field.name) = src;
+                }
+            }
+            return @unionInit(RData, @tagName(tag), ret);
+        },
+        else => @compileError("Expected struct, found '" ++ @typeName(T) ++ "'"),
+    }
+}
+
 fn rdataFromString(comptime T: type, self: *T, allocator: Allocator, data: []const u8) !void {
     var tokens = std.mem.tokenizeAny(u8, data, " \t");
     switch (@typeInfo(T)) {
@@ -140,7 +164,7 @@ fn rdataFromString(comptime T: type, self: *T, allocator: Allocator, data: []con
     }
 }
 
-pub fn formatRData(comptime T: type, data: T, writer: *std.io.Writer) !void {
+pub fn formatRData(comptime T: type, data: T, writer: *std.Io.Writer) !void {
     try writer.print("[\n", .{});
     switch (@typeInfo(T)) {
         .@"struct" => |info| {
@@ -168,7 +192,7 @@ pub const RData = union(Type) {
     // 1. Implement printing support
     // 2. Full rdata type support
     a: struct {
-        addr: std.net.Ip4Address = undefined,
+        addr: std.Io.net.Ip4Address = undefined,
     },
     ns: struct {
         name: Name,
@@ -196,7 +220,7 @@ pub const RData = union(Type) {
         name: Name,
     },
     aaaa: struct {
-        addr: std.net.Ip6Address = undefined,
+        addr: std.Io.net.Ip6Address = undefined,
     },
     srv: struct {
         priority: u16,
@@ -224,7 +248,7 @@ pub const RData = union(Type) {
             .ds,
             .sig,
             .nsec3,
-            => |t| return initRData(std.meta.TagPayload(RData, t), t, allocator),
+            => |t| return initRData(@FieldType(RData, @tagName(t)), t, allocator),
             .a => RData{ .a = .{} },
             .aaaa => RData{ .aaaa = .{} },
             else => RData{ .data = .empty },
@@ -236,6 +260,26 @@ pub const RData = union(Type) {
             .data => |*case| case.deinit(allocator),
             inline else => |*t| deinitRData(@TypeOf(t.*), t, allocator),
         }
+    }
+
+    pub fn clone(self: *const RData, allocator: Allocator) !RData {
+        return switch (self.*) {
+            .data => |*list| RData{ .data = try list.clone(allocator) },
+            .a => |*a| RData{ .a = .{ .addr = a.addr } },
+            .aaaa => |*a| RData{ .aaaa = .{ .addr = a.addr } },
+            .cname => |*t| cloneRData(@TypeOf(t.*), .cname, t, allocator),
+            .ns => |*t| cloneRData(@TypeOf(t.*), .ns, t, allocator),
+            .ptr => |*t| cloneRData(@TypeOf(t.*), .ptr, t, allocator),
+            .mx => |*t| cloneRData(@TypeOf(t.*), .mx, t, allocator),
+            .txt => |*t| cloneRData(@TypeOf(t.*), .txt, t, allocator),
+            .soa => |*t| cloneRData(@TypeOf(t.*), .soa, t, allocator),
+            .srv => |*t| cloneRData(@TypeOf(t.*), .srv, t, allocator),
+            .dnskey => |*t| cloneRData(@TypeOf(t.*), .dnskey, t, allocator),
+            .ds => |*t| cloneRData(@TypeOf(t.*), .ds, t, allocator),
+            .sig => |*t| cloneRData(@TypeOf(t.*), .sig, t, allocator),
+            .nsec3 => |*t| cloneRData(@TypeOf(t.*), .nsec3, t, allocator),
+            .rrsig => |*t| cloneRData(@TypeOf(t.*), .rrsig, t, allocator),
+        };
     }
 
     pub fn decode(allocator: Allocator, @"type": Type, size: usize, reader: *Reader) !RData {
@@ -250,16 +294,16 @@ pub const RData = union(Type) {
             .dnskey,
             .sig,
             .nsec3,
-            => |t| return decodeRData(std.meta.TagPayload(RData, t), t, allocator, size, reader),
+            => |t| return decodeRData(@FieldType(RData, @tagName(t)), t, allocator, size, reader),
             Type.a => {
                 const data = try reader.takeArray(4);
                 return RData{ .a = .{
-                    .addr = std.net.Ip4Address.init(data.*, 0),
+                    .addr = .{ .bytes = data.*, .port = 0 },
                 } };
             },
             Type.aaaa => {
                 const data = try reader.takeArray(16);
-                return RData{ .aaaa = .{ .addr = std.net.Ip6Address.init(data.*, 0, 0, 0) } };
+                return RData{ .aaaa = .{ .addr = .{ .bytes = data.*, .port = 0, .flow = 0, .interface = .none } } };
             },
             Type.ds => {
                 const key_tag = try reader.takeInt(u16, .big);
@@ -299,12 +343,10 @@ pub const RData = union(Type) {
     pub fn encode(self: *RData, writer: *Writer) !usize {
         switch (self.*) {
             .a => |*a| {
-                const bytes = @as([4]u8, @bitCast(a.addr.sa.addr));
-                return try writer.write(&bytes);
+                return try writer.write(a.addr.bytes[0..]);
             },
             .aaaa => |*aaaa| {
-                const bytes = aaaa.addr.sa.addr;
-                return try writer.write(&bytes);
+                return try writer.write(aaaa.addr.bytes[0..]);
             },
             .data => |data| return writer.write(data.items),
             inline else => |*case| return encodeRData(@TypeOf(case.*), case, writer),
@@ -323,14 +365,14 @@ pub const RData = union(Type) {
     pub fn parse(self: *RData, allocator: Allocator, data: []const u8) !void {
         const dat = std.mem.trim(u8, data, " \t\n\r");
         return switch (self.*) {
-            .a => |*a| a.addr = try std.net.Ip4Address.parse(dat, 0),
-            .aaaa => |*aaaa| aaaa.addr = try std.net.Ip6Address.parse(dat, 0),
+            .a => |*a| a.addr = try std.Io.net.Ip4Address.parse(dat, 0),
+            .aaaa => |*aaaa| aaaa.addr = try std.Io.net.Ip6Address.parse(dat, 0),
             .data => |*list| try list.appendSlice(allocator, dat),
             inline else => |*case| rdataFromString(@TypeOf(case.*), case, allocator, dat),
         };
     }
 
-    pub fn format(self: RData, writer: *std.io.Writer) !void {
+    pub fn format(self: RData, writer: *std.Io.Writer) !void {
         switch (self) {
             .data => |*case| try writer.print("{any}", .{case.*}),
             inline else => |*case| try formatRData(@TypeOf(case.*), case.*, writer),

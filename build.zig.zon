@@ -15,7 +15,7 @@
     // This field is optional.
     // This is currently advisory only; Zig does not yet do anything
     // with this value.
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
 
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
@@ -23,17 +23,9 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .libxev = .{
-            .url = "git+https://github.com/zen-eth/libxev.git?ref=0.15.1#68f5dc7c512269d83b952d4bbda94c3c1bf4e4c6",
-            .hash = "libxev-0.0.0-86vtc2odEwBDzC8p8WoJl4IPhkBGNijDyppIFakxEzaL",
-        },
         .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap#5289e0753cd274d65344bef1c114284c633536ea",
-            .hash = "clap-0.11.0-oBajB-HnAQDPCKYzwF7rO3qDFwRcD39Q0DALlTSz5H7e",
-        },
-        .openssl = .{
-            .url = "git+https://github.com/dzfrias/openssl-zig#2fbf20e414d6e09f1e1a30a5a831cf4aad87a2b6",
-            .hash = "openssl-3.4.0-YymhPpDhAABAHYWqHr3POORyDXLqD_UhTTN6sMfxcHdl",
+            .url = "git+https://github.com/Hejsil/zig-clap#27621cb7207643f914bae7b01902b22a8b5916e7",
+            .hash = "clap-0.11.0-oBajBxDoAQChQCl4LRM4tyf-VChKLbhYilS806xxzxrQ",
         },
     },
     .paths = .{

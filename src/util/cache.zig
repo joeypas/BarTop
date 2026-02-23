@@ -32,7 +32,7 @@ pub fn LRU(comptime T: type) type {
                 .head = null,
                 .tail = null,
                 .allocator = allocator,
-                .entry_pool = EntryPool(T).initPreheated(allocator, capacity) catch undefined,
+                .entry_pool = EntryPool(T).initCapacity(allocator, capacity) catch undefined,
             };
         }
 
@@ -41,7 +41,7 @@ pub fn LRU(comptime T: type) type {
             //while (it.next()) |entry| {
             //    self.allocator.destroy(entry.value_ptr.*);
             //}
-            self.entry_pool.deinit();
+            self.entry_pool.deinit(self.allocator);
             self.map.deinit();
         }
 
@@ -104,7 +104,7 @@ pub fn LRU(comptime T: type) type {
                         self.entry_pool.destroy(tail_entry);
                     }
                 }
-                const new_entry = try self.entry_pool.create();
+                const new_entry = try self.entry_pool.create(self.allocator);
                 new_entry.* = .{
                     .key = key,
                     .value = value,

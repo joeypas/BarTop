@@ -2,8 +2,7 @@ pub const Message = @import("message.zig");
 const rr = @import("rr.zig");
 pub const dnssec = @import("dnssec.zig");
 pub const util = @import("util/root.zig");
-pub const server = @import("stub_resolver.zig");
-const crypto = util.crypto;
+pub const server = @import("stub_resolver_async.zig");
 const Reader = std.Io.Reader;
 const Writer = std.Io.Writer;
 
@@ -72,7 +71,7 @@ test "record encode/decode" {
 
     try record.name.parse("example.com");
     record.ttl = 60;
-    record.rdata.a.addr = std.net.Ip4Address.init(.{ 1, 2, 3, 4 }, 0);
+    record.rdata.a.addr = .{ .bytes = .{ 1, 2, 3, 4 }, .port = 0 };
     record.rdlength = record.rdata.getLen();
 
     var buf: [128]u8 = undefined;
@@ -156,41 +155,4 @@ test "message encode/decode" {
     try std.testing.expectEqual(a.ttl, da.ttl);
 }
 
-test "crypto_gen/sign" {
-    const alloc = std.testing.allocator;
-    var ctx = crypto.Context.init();
-    defer ctx.deinit();
-
-    var key = crypto.Key.init(alloc, ctx, .ecdsap384sha384);
-    defer key.deinit();
-
-    try key.gen();
-    try key.toFileDer("private.der");
-
-    var key2 = crypto.Key.init(alloc, ctx, .ecdsap384sha384);
-    defer key2.deinit();
-    try key2.fromFileDer("private.der");
-
-    const test_msg = "This is a test Message.";
-
-    const sig = try key2.sign(alloc, test_msg);
-    defer alloc.free(sig);
-
-    try std.testing.expect(try key.verify(sig, test_msg));
-}
-
-test "crypto pubkey" {
-    const alloc = std.testing.allocator;
-    var ctx = crypto.Context.init();
-    defer ctx.deinit();
-
-    var key = crypto.Key.init(alloc, ctx, .ed448);
-    defer key.deinit();
-
-    try key.gen();
-
-    const pubkey = try key.publicKeyBase64(alloc);
-    defer alloc.free(pubkey);
-
-    std.debug.print("len: {d}\nkey: {s}\n", .{ pubkey.len, pubkey });
-}
+// Crypto tests removed (OpenSSL dependency dropped for Zig 0.16 migration).

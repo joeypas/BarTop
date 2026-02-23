@@ -111,34 +111,32 @@ pub const Name = struct {
         return len;
     }
 
-    pub fn copy(self: *Name, other: *Name) !void {
+    pub fn copy(self: *Name, other: *const Name) !void {
         for (other.labels.items) |*item| {
-            try self.labels.append(self.allocator, try item.clone());
+            try self.labels.append(self.allocator, try item.clone(self.allocator));
         }
     }
 
-    pub fn clone(self: *Name) !Name {
+    pub fn clone(self: *const Name) !Name {
         var ret = Name.init(self.allocator);
         try ret.copy(self);
         return ret;
     }
 
     pub fn print(self: *Name, buf: []u8, @"type": ?Type) ![]u8 {
-        var fbs = std.io.fixedBufferStream(buf);
-        var size: usize = 0;
-        var writer = fbs.writer();
+        var writer: std.Io.Writer = .fixed(buf);
 
         for (self.labels.items) |*item| {
-            size += try writer.write(item.items);
+            _ = try writer.write(item.items);
             try writer.writeByte('.');
-            size += 1;
         }
 
         if (@"type") |t| {
-            size += try writer.write(&@as([2]u8, @bitCast(@intFromEnum(t))));
+            const bytes: [2]u8 = @bitCast(@intFromEnum(t));
+            _ = try writer.write(&bytes);
         }
 
-        return buf[0..size];
+        return buf[0..writer.end];
     }
 
     pub fn allocPrint(self: *Name, allocator: Allocator) ![]u8 {
@@ -151,7 +149,7 @@ pub const Name = struct {
         return ret.toOwnedSlice(allocator);
     }
 
-    pub fn format(self: Name, writer: *std.io.Writer) !void {
+    pub fn format(self: Name, writer: *std.Io.Writer) !void {
         for (self.labels.items) |item| {
             try writer.print("{s}.", .{item.items});
         }
@@ -251,7 +249,7 @@ pub const Question = struct {
         return len;
     }
 
-    pub fn clone(self: *Question) !Question {
+    pub fn clone(self: *const Question) !Question {
         return Question{
             .allocator = self.allocator,
             .qname = try self.qname.clone(),
@@ -273,7 +271,7 @@ pub const Question = struct {
         );
     }
 
-    pub fn format(self: Question, writer: *std.io.Writer) !void {
+    pub fn format(self: Question, writer: *std.Io.Writer) !void {
         try writer.print(
             \\Question: [
             \\  qname: {f},
@@ -367,7 +365,7 @@ pub const Record = struct {
         );
     }
 
-    pub fn format(self: Record, writer: *std.io.Writer) !void {
+    pub fn format(self: Record, writer: *std.Io.Writer) !void {
         try writer.print(
             \\Record: [
             \\  name: {f},
@@ -382,7 +380,7 @@ pub const Record = struct {
         );
     }
 
-    pub fn clone(self: *Record) !Record {
+    pub fn clone(self: *const Record) !Record {
         return Record{
             .allocator = self.allocator,
             .name = try self.name.clone(),
@@ -390,7 +388,7 @@ pub const Record = struct {
             .class = self.class,
             .ttl = self.ttl,
             .rdlength = self.rdlength,
-            .rdata = try self.rdata.clone(),
+            .rdata = try self.rdata.clone(self.allocator),
         };
     }
 };

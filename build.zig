@@ -19,14 +19,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    const xev = b.dependency("libxev", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const openssl = b.dependency("openssl", .{
-        .target = target,
-        .optimize = optimize,
-    });
 
     var list: [3]*std.Build.Step.Compile = undefined;
 
@@ -35,13 +27,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("src/root.zig"),
     });
-
-    dns.addImport("xev", xev.module("xev"));
-
-    dns.linkLibrary(openssl.artifact("crypto"));
-    //dns.linkLibrary(openssl.artifact("ssl"));
-    dns.addIncludePath(openssl.artifact("crypto").getEmittedIncludeTree());
-    dns.addIncludePath(openssl.artifact("ssl").getEmittedIncludeTree());
 
     list[0] = b.addLibrary(.{
         .name = "dns",

@@ -182,7 +182,7 @@ pub fn allocPrint(self: *Message, allocator: Allocator) ![]u8 {
     return array.toOwnedSlice();
 }
 
-pub fn format(self: Message, writer: *std.io.Writer) !void {
+pub fn format(self: Message, writer: *std.Io.Writer) !void {
     try writer.print("{f}\n", .{self.header});
 
     for (self.questions.items) |question| {
@@ -282,7 +282,7 @@ pub const Header = packed struct {
         );
     }
 
-    pub fn format(self: Header, writer: *std.io.Writer) !void {
+    pub fn format(self: Header, writer: *std.Io.Writer) !void {
         try writer.print(
             \\Header: [
             \\  id: {d},
