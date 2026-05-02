@@ -7,172 +7,300 @@ const Writer = std.Io.Writer;
 
 /// Represents a Domain Name
 pub const Name = struct {
-    allocator: Allocator,
-    labels: ArrayList(ArrayList(u8)),
+    const OwnedLabels = ArrayList(u8);
+    const Storage = union(enum) {
+        owned: OwnedLabels,
+        borrowed: Borrowed,
+    };
+    const Borrowed = struct {
+        buffer: []const u8 = &.{},
+        offset: usize = 0,
+    };
 
-    pub fn init(allocator: Allocator) Name {
+    storage: Storage = .{ .borrowed = .{} },
+
+    pub fn init() Name {
         return .{
-            .allocator = allocator,
-            .labels = .empty,
+            .storage = .{ .owned = .empty },
         };
     }
 
     pub fn deinit(self: *Name, allocator: Allocator) void {
-        for (self.labels.items) |*label| {
-            label.deinit(allocator);
+        switch (self.storage) {
+            .owned => |*labels| {
+                for (labels.items) |*label| {
+                    label.deinit(allocator);
+                }
+                labels.deinit(allocator);
+            },
+            .borrowed => {},
         }
-
-        self.labels.deinit(allocator);
+        self.storage = .{ .owned = .empty };
     }
 
-    pub fn addLabel(self: *Name, label: []const u8) !void {
-        var array = try ArrayList(u8).initCapacity(self.allocator, label.len);
-        errdefer array.deinit(self.allocator);
+    pub fn addLabel(self: *Name, allocator: Allocator, label: []const u8) !void {
+        try self.ensureOwned(allocator);
+        var array = try ArrayList(u8).initCapacity(allocator, label.len);
+        errdefer array.deinit(allocator);
         array.appendSliceAssumeCapacity(label);
-        try self.labels.append(self.allocator, array);
+        try self.storage.owned.append(allocator, array);
     }
 
     pub fn getLen(self: *Name) u16 {
-        var len: u16 = 0;
-
-        for (self.labels.items) |item| {
+        var it = self.iter();
+        var len: usize = 1; // root terminator
+        while (it.next()) |label| {
             len += 1;
-            len += @intCast(item.items.len);
+            len += label.len;
         }
-
-        len += 1;
-
-        return len;
+        return @intCast(len);
     }
 
-    fn checkPointer(allocator: Allocator, labels: *ArrayList(ArrayList(u8)), reader: *Reader) !bool {
-        if (reader.end - reader.seek >= 2) {
-            const buf = try reader.peek(2);
-            const pointer = buf[0];
-            if (pointer >= 0xC0) {
-                const ptr = try reader.takeInt(u16, .big);
-                const offset = @as(usize, ptr & 0x3FFF);
-                var fbs = std.Io.Reader.fixed(reader.buffer[0..]);
-                fbs.seek = offset;
-                var size = try fbs.takeByte();
-                while (size != 0x00) {
-                    var writer = try Writer.Allocating.initCapacity(allocator, @intCast(size));
-                    errdefer writer.deinit();
-                    try fbs.streamExact(&writer.writer, @intCast(size));
-                    try labels.append(allocator, writer.toArrayList());
-                    // Edge case where a pointer points to another pointer
-                    if (try checkPointer(allocator, labels, &fbs)) break;
-                    size = try fbs.takeByte();
-                }
-                return true;
-            }
-            return false;
-        }
-        return false;
-    }
-
-    pub fn decode(allocator: Allocator, reader: *Reader) !Name {
-        var labels: ArrayList(ArrayList(u8)) = .empty;
-
-        if (try checkPointer(allocator, &labels, reader)) {
-            return Name{
-                .allocator = allocator,
-                .labels = labels,
-            };
-        }
-
-        var size = try reader.takeByte();
-
-        while (size != 0) {
-            var array = try Writer.Allocating.initCapacity(allocator, @intCast(size));
-            try reader.streamExact(&array.writer, @intCast(size));
-            try labels.append(allocator, array.toArrayList());
-            if (try checkPointer(allocator, &labels, reader)) break;
-            size = try reader.takeByte();
-        }
-
-        return Name{
-            .allocator = allocator,
-            .labels = labels,
+    pub fn decode(reader: *Reader) !Name {
+        const base = reader.buffer[0..reader.end];
+        const start = reader.seek;
+        try skip(reader);
+        return .{
+            .storage = .{ .borrowed = .{
+                .buffer = base,
+                .offset = start,
+            } },
         };
     }
 
-    pub fn encode(self: *Name, writer: *Writer) !usize {
-        var len: usize = 0;
-        for (self.labels.items) |label| {
-            try writer.writeByte(@truncate(label.items.len));
-            len += 1;
-            len += try writer.write(label.items);
-        }
+    pub fn skip(reader: *Reader) !void {
+        const base = reader.buffer[0..reader.end];
+        const consumed = try encodedNameLen(base, reader.seek);
+        reader.seek += consumed;
+    }
 
+    pub fn encode(self: *Name, writer: *Writer) !usize {
+        var it = self.iter();
+        var len: usize = 0;
+        while (it.next()) |label| {
+            try writer.writeByte(@intCast(label.len));
+            len += 1;
+            len += try writer.write(label);
+        }
         try writer.writeByte(0x00);
         len += 1;
-
         return len;
     }
 
-    pub fn copy(self: *Name, other: *const Name) !void {
-        for (other.labels.items) |*item| {
-            try self.labels.append(self.allocator, try item.clone(self.allocator));
+    pub fn copy(self: *Name, allocator: Allocator, other: *const Name) !void {
+        try self.ensureOwned(allocator);
+        var it = other.iter();
+        while (it.next()) |label| {
+            var out = try ArrayList(u8).initCapacity(allocator, label.len);
+            errdefer out.deinit(allocator);
+            out.appendSliceAssumeCapacity(label);
+            try self.storage.owned.append(allocator, out);
         }
     }
 
-    pub fn clone(self: *const Name) !Name {
-        var ret = Name.init(self.allocator);
-        try ret.copy(self);
+    pub fn clone(self: *const Name, allocator: Allocator) !Name {
+        var ret = Name.init();
+        try ret.copy(allocator, self);
         return ret;
     }
 
     pub fn print(self: *Name, buf: []u8, @"type": ?Type) ![]u8 {
         var writer: std.Io.Writer = .fixed(buf);
-
-        for (self.labels.items) |*item| {
-            _ = try writer.write(item.items);
+        var it = self.iter();
+        while (it.next()) |label| {
+            _ = try writer.write(label);
             try writer.writeByte('.');
         }
-
         if (@"type") |t| {
             const bytes: [2]u8 = @bitCast(@intFromEnum(t));
             _ = try writer.write(&bytes);
         }
-
         return buf[0..writer.end];
     }
 
     pub fn allocPrint(self: *Name, allocator: Allocator) ![]u8 {
         var ret: ArrayList(u8) = .empty;
-        for (self.labels.items) |*item| {
-            try ret.appendSlice(allocator, item.items);
+        var it = self.iter();
+        while (it.next()) |label| {
+            try ret.appendSlice(allocator, label);
             try ret.append(allocator, '.');
         }
-
         return ret.toOwnedSlice(allocator);
     }
 
     pub fn format(self: Name, writer: *std.Io.Writer) !void {
-        for (self.labels.items) |item| {
-            try writer.print("{s}.", .{item.items});
+        var name_copy = self;
+        var it = name_copy.iter();
+        while (it.next()) |label| {
+            try writer.print("{s}.", .{label});
         }
     }
 
+    pub fn labelCount(self: *const Name) usize {
+        var it = self.iter();
+        var count: usize = 0;
+        while (it.next()) |_| count += 1;
+        return count;
+    }
+
+    pub fn equalsIgnoreCase(a: *const Name, b: *const Name) bool {
+        var ia = a.iter();
+        var ib = b.iter();
+        while (true) {
+            const al = ia.next();
+            const bl = ib.next();
+            if (al == null or bl == null) return al == null and bl == null;
+            if (al.?.len != bl.?.len) return false;
+            if (!std.ascii.eqlIgnoreCase(al.?, bl.?)) return false;
+        }
+    }
+
+    pub fn ensureOwned(self: *Name, allocator: Allocator) !void {
+        switch (self.storage) {
+            .owned => return,
+            .borrowed => |borrowed| {
+                var out: OwnedLabels = .empty;
+                errdefer {
+                    for (out.items) |*label| label.deinit(allocator);
+                    out.deinit(allocator);
+                }
+
+                var it = Iterator.initBorrowed(borrowed.buffer, borrowed.offset);
+                while (it.next()) |label| {
+                    var label_copy = try ArrayList(u8).initCapacity(allocator, label.len);
+                    errdefer label_copy.deinit(allocator);
+                    label_copy.appendSliceAssumeCapacity(label);
+                    try out.append(allocator, label_copy);
+                }
+                self.storage = .{ .owned = out };
+            },
+        }
+    }
+
+    fn encodedNameLen(buffer: []const u8, offset: usize) !usize {
+        if (offset >= buffer.len) return error.EndOfStream;
+        var cursor = offset;
+        while (true) {
+            if (cursor >= buffer.len) return error.EndOfStream;
+            const len = buffer[cursor];
+            if (len == 0) return cursor - offset + 1;
+            if ((len & 0xC0) == 0xC0) {
+                if (cursor + 1 >= buffer.len) return error.EndOfStream;
+                const ptr = ((@as(usize, len & 0x3F)) << 8) | @as(usize, buffer[cursor + 1]);
+                if (ptr >= buffer.len) return error.EndOfStream;
+                return cursor - offset + 2;
+            }
+            if ((len & 0xC0) != 0) return error.BadRData;
+            const label_len: usize = len;
+            if (label_len > 63) return error.BadRData;
+            cursor += 1;
+            if (cursor + label_len > buffer.len) return error.EndOfStream;
+            cursor += label_len;
+        }
+    }
+
+    fn iter(self: *const Name) Iterator {
+        return switch (self.storage) {
+            .owned => |labels| Iterator{ .owned = .{ .labels = labels.items } },
+            .borrowed => |borrowed| Iterator.initBorrowed(borrowed.buffer, borrowed.offset),
+        };
+    }
+
+    const Iterator = union(enum) {
+        owned: struct {
+            labels: []const ArrayList(u8),
+            index: usize = 0,
+        },
+        borrowed: struct {
+            buffer: []const u8,
+            cursor: usize,
+            jumps: usize = 0,
+            done: bool = false,
+        },
+
+        fn initBorrowed(buffer: []const u8, offset: usize) Iterator {
+            return .{ .borrowed = .{
+                .buffer = buffer,
+                .cursor = offset,
+            } };
+        }
+
+        fn next(self: *Iterator) ?[]const u8 {
+            return switch (self.*) {
+                .owned => |*owned| blk: {
+                    if (owned.index >= owned.labels.len) break :blk null;
+                    defer owned.index += 1;
+                    break :blk owned.labels[owned.index].items;
+                },
+                .borrowed => |*borrowed| blk: {
+                    while (true) {
+                        if (borrowed.done) break :blk null;
+                        if (borrowed.cursor >= borrowed.buffer.len) break :blk null;
+                        const len = borrowed.buffer[borrowed.cursor];
+                        if (len == 0) {
+                            borrowed.done = true;
+                            break :blk null;
+                        }
+                        if ((len & 0xC0) == 0xC0) {
+                            if (borrowed.cursor + 1 >= borrowed.buffer.len) {
+                                borrowed.done = true;
+                                break :blk null;
+                            }
+                            const ptr = ((@as(usize, len & 0x3F)) << 8) | @as(usize, borrowed.buffer[borrowed.cursor + 1]);
+                            if (ptr >= borrowed.buffer.len) {
+                                borrowed.done = true;
+                                break :blk null;
+                            }
+                            borrowed.cursor = ptr;
+                            borrowed.jumps += 1;
+                            if (borrowed.jumps > borrowed.buffer.len) {
+                                borrowed.done = true;
+                                break :blk null;
+                            }
+                            continue;
+                        }
+                        if ((len & 0xC0) != 0) {
+                            borrowed.done = true;
+                            break :blk null;
+                        }
+                        const label_len: usize = len;
+                        if (label_len > 63) {
+                            borrowed.done = true;
+                            break :blk null;
+                        }
+                        const start = borrowed.cursor + 1;
+                        const end = start + label_len;
+                        if (end > borrowed.buffer.len) {
+                            borrowed.done = true;
+                            break :blk null;
+                        }
+                        borrowed.cursor = end;
+                        break :blk borrowed.buffer[start..end];
+                    }
+                },
+            };
+        }
+    };
+
     /// Given a string representation of a Domain Name, split into labels and add to internal list
-    pub fn parse(self: *Name, name: []const u8) !void {
+    pub fn parse(self: *Name, allocator: Allocator, name: []const u8) !void {
+        try self.ensureOwned(allocator);
         var itr = std.mem.splitAny(u8, name, ". ");
 
         while (itr.next()) |part| {
             if (part.len == 0) continue;
-            var array = try ArrayList(u8).initCapacity(self.allocator, name.len);
-            errdefer array.deinit(self.allocator);
+            var array = try ArrayList(u8).initCapacity(allocator, name.len);
+            errdefer array.deinit(allocator);
             const slice = array.addManyAsSliceAssumeCapacity(part.len);
             @memcpy(slice[0..], part);
-            try self.labels.append(self.allocator, array);
+            try self.storage.owned.append(allocator, array);
         }
     }
 
     pub fn initString(allocator: Allocator, name: []const u8) !Name {
-        var ret = Name.init(allocator);
-        errdefer ret.deinit();
-        try ret.parse(name);
+        var ret = Name.init();
+        errdefer ret.deinit(allocator);
+        try ret.parse(allocator, name);
         return ret;
     }
 };
@@ -187,6 +315,8 @@ pub const Type = enum(u16) {
     txt = 16,
     aaaa = 28,
     srv = 33,
+    svcb = 64,
+    https = 65,
     //opt = 41,
     rrsig = 46,
     //nsec = 47,
@@ -212,16 +342,14 @@ pub const Class = enum(u16) {
 };
 
 pub const Question = struct {
-    allocator: Allocator,
     qname: Name,
     qtype: Type = .a,
     qclass: Class = .in,
     ref: bool = false,
 
-    pub fn init(allocator: Allocator) Question {
+    pub fn init() Question {
         return Question{
-            .allocator = allocator,
-            .qname = Name.init(allocator),
+            .qname = Name.init(),
         };
     }
 
@@ -229,13 +357,18 @@ pub const Question = struct {
         if (!self.ref) self.qname.deinit(allocator);
     }
 
-    pub fn decode(allocator: Allocator, reader: *Reader) !Question {
+    pub fn decode(reader: *Reader) !Question {
         return Question{
-            .allocator = allocator,
-            .qname = try Name.decode(allocator, reader),
+            .qname = try Name.decode(reader),
             .qtype = @enumFromInt(try reader.takeInt(u16, .big)),
             .qclass = @enumFromInt(try reader.takeInt(u16, .big)),
         };
+    }
+
+    pub fn skip(reader: *Reader) !void {
+        try Name.skip(reader);
+        _ = try reader.takeInt(u16, .big);
+        _ = try reader.takeInt(u16, .big);
     }
 
     pub fn encode(self: *Question, writer: *Writer) !usize {
@@ -249,10 +382,9 @@ pub const Question = struct {
         return len;
     }
 
-    pub fn clone(self: *const Question) !Question {
+    pub fn clone(self: *const Question, allocator: Allocator) !Question {
         return Question{
-            .allocator = self.allocator,
-            .qname = try self.qname.clone(),
+            .qname = try self.qname.clone(allocator),
             .qtype = self.qtype,
             .qclass = self.qclass,
         };
@@ -273,19 +405,13 @@ pub const Question = struct {
 
     pub fn format(self: Question, writer: *std.Io.Writer) !void {
         try writer.print(
-            \\Question: [
-            \\  qname: {f},
-            \\  qtype: {any},
-            \\  qclass: {any},
-            \\],
-        ,
-            .{ self.qname, self.qtype, self.qclass },
+            "{f}\t\t{any}\t{any}",
+            .{ self.qname, self.qclass, self.qtype },
         );
     }
 };
 
 pub const Record = struct {
-    allocator: Allocator,
     name: Name,
     type: Type = .a,
     class: Class = .in,
@@ -294,11 +420,10 @@ pub const Record = struct {
     rdata: RData,
     ref: bool = false,
 
-    pub fn init(allocator: Allocator, @"type": Type) Record {
+    pub fn init(@"type": Type) Record {
         return Record{
-            .allocator = allocator,
-            .name = Name.init(allocator),
-            .rdata = RData.init(allocator, @"type"),
+            .name = Name.init(),
+            .rdata = RData.init(@"type"),
             .type = @"type",
         };
     }
@@ -310,19 +435,18 @@ pub const Record = struct {
         }
     }
 
-    pub fn decode(allocator: Allocator, reader: *Reader) !Record {
-        const name = try Name.decode(allocator, reader);
+    pub fn decode(reader: *Reader) !Record {
+        const name = try Name.decode(reader);
         const type_: Type = @enumFromInt(try reader.takeInt(u16, .big));
         const class: Class = @enumFromInt(try reader.takeInt(u16, .big));
         const ttl = try reader.takeInt(u32, .big);
         var rdlength = try reader.takeInt(u16, .big);
 
-        var rdata = try RData.decode(allocator, type_, @intCast(rdlength), reader);
+        var rdata = try RData.decode(type_, @intCast(rdlength), reader);
 
         rdlength = rdata.getLen();
 
         return Record{
-            .allocator = allocator,
             .name = name,
             .type = type_,
             .class = class,
@@ -330,6 +454,17 @@ pub const Record = struct {
             .rdlength = rdlength,
             .rdata = rdata,
         };
+    }
+
+    pub fn skip(reader: *Reader) !void {
+        try Name.skip(reader);
+        _ = try reader.takeInt(u16, .big);
+        _ = try reader.takeInt(u16, .big);
+        _ = try reader.takeInt(u32, .big);
+        const rdlength = try reader.takeInt(u16, .big);
+        const end = reader.seek + @as(usize, rdlength);
+        if (end > reader.end) return error.EndOfStream;
+        reader.seek = end;
     }
 
     pub fn encode(self: *Record, writer: *Writer) !usize {
@@ -367,28 +502,19 @@ pub const Record = struct {
 
     pub fn format(self: Record, writer: *std.Io.Writer) !void {
         try writer.print(
-            \\Record: [
-            \\  name: {f},
-            \\  type: {any},
-            \\  class: {any},
-            \\  ttl: {d},
-            \\  rdlength: {d},
-            \\  rdata: {f},
-            \\],
-        ,
-            .{ self.name, self.type, self.class, self.ttl, self.rdlength, self.rdata },
+            "{f}\t{d}\t{any}\t{any}\t{f}",
+            .{ self.name, self.ttl, self.class, self.type, self.rdata },
         );
     }
 
-    pub fn clone(self: *const Record) !Record {
+    pub fn clone(self: *const Record, allocator: Allocator) !Record {
         return Record{
-            .allocator = self.allocator,
-            .name = try self.name.clone(),
+            .name = try self.name.clone(allocator),
             .type = self.type,
             .class = self.class,
             .ttl = self.ttl,
             .rdlength = self.rdlength,
-            .rdata = try self.rdata.clone(self.allocator),
+            .rdata = try self.rdata.clone(allocator),
         };
     }
 };
