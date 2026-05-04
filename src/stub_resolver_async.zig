@@ -1,72 +1,35 @@
 const std = @import("std");
 const Message = @import("message.zig");
-const LRU = @import("util/cache.zig").LRU;
+const MessageReader = @import("message_reader.zig").MessageReader;
+const cache_hub = @import("cache_hub.zig");
+const dns_server = @import("dns_server.zig");
 
 const Io = std.Io;
 const net = Io.net;
 const Allocator = std.mem.Allocator;
-const Mutex = Io.Mutex;
 
 const log = std.log.scoped(.stub_async);
 
 const BUFFER_SIZE = 2048;
-const RECV_TIMEOUT_MS = 200;
 const UPSTREAM_TIMEOUT_MS = 2000;
-const MAX_INFLIGHT = 128;
-const CACHE_CAPACITY = 512;
 
 pub const Options = struct {
     external_server: ?[]const u8 = null,
-    bind_addr: []const u8 = "127.0.0.1",
-    bind_port: u16 = 53,
 };
 
-const TaskResult = ?anyerror;
-
-const CachedMessage = struct {
-    message: Message.Message,
-    stored_at: Io.Timestamp,
-
-    pub fn deinit(self: *CachedMessage) void {
-        self.message.deinit();
-    }
-};
-
-const Task = struct {
-    allocator: Allocator,
-    from: net.IpAddress,
-    data: []u8,
-
-    pub fn init(allocator: Allocator, from: net.IpAddress, data: []const u8) !*Task {
-        const task = try allocator.create(Task);
-        errdefer allocator.destroy(task);
-        task.allocator = allocator;
-        task.from = from;
-        task.data = try allocator.alloc(u8, data.len);
-        @memcpy(task.data, data);
-        return task;
-    }
-
-    pub fn deinit(self: *Task) void {
-        self.allocator.free(self.data);
-        self.allocator.destroy(self);
-    }
-};
+const CacheKey = cache_hub.Key;
+const CacheValue = cache_hub.Value;
+const CacheHub = cache_hub.Hub;
 
 pub const Server = struct {
+    pub const Request = CacheHub.Request;
+
     allocator: Allocator,
     options: Options,
-    io: Io,
-    socket: net.Socket,
     upstream_addr: net.IpAddress,
-    cache: LRU(CachedMessage),
-    cache_mutex: Mutex = .init,
-    shutdown: std.atomic.Value(bool) = .init(false),
+    cache_hub: CacheHub,
 
-    pub fn init(allocator: Allocator, io: Io, options: Options) !Server {
-        var bind_addr = try net.IpAddress.parse(options.bind_addr, options.bind_port);
-        const socket = try net.IpAddress.bind(&bind_addr, io, .{ .mode = .dgram, .protocol = .udp });
-
+    pub fn init(allocator: Allocator, io: Io, options: Options, request_buffer: []Request) !Server {
         const resolv_text = try getResolv(allocator, io, options.external_server);
         defer allocator.free(resolv_text);
 
@@ -75,257 +38,188 @@ pub const Server = struct {
         return .{
             .allocator = allocator,
             .options = options,
-            .io = io,
-            .socket = socket,
             .upstream_addr = upstream_addr,
-            .cache = LRU(CachedMessage).init(allocator, CACHE_CAPACITY),
+            .cache_hub = CacheHub.init(allocator, request_buffer),
         };
     }
 
-    pub fn deinit(self: *Server) void {
-        self.cache_mutex.lockUncancelable(self.io);
-        var head = self.cache.head;
-        while (head) |entry| {
-            entry.value.message.deinit();
-            head = entry.next;
-        }
-        self.cache.deinit();
-        self.cache_mutex.unlock(self.io);
-
-        self.socket.close(self.io);
+    pub fn deinit(self: *Server, io: Io) void {
+        self.cache_hub.deinit(io);
     }
 
-    pub fn requestStop(self: *Server) void {
-        self.shutdown.store(true, .release);
+    pub fn start(self: *Server, io: Io) !void {
+        try self.cache_hub.start(io);
     }
 
-    pub fn run(self: *Server) !void {
-        log.info("Async stub resolver listening on {f}", .{self.socket.address});
+    pub fn handlePacket(
+        self: *Server,
+        io: Io,
+        allocator: Allocator,
+        responder: dns_server.Responder,
+        from: net.IpAddress,
+        data: []const u8,
+    ) !void {
+        if (data.len < 12) return;
 
-        var recv_buf: [BUFFER_SIZE]u8 = undefined;
-        const timeout = Io.Timeout{ .duration = .{ .raw = Io.Duration.fromMilliseconds(RECV_TIMEOUT_MS), .clock = .awake } };
-
-        var futures: std.ArrayList(Io.Future(TaskResult)) = .empty;
-        defer {
-            for (futures.items) |*f| {
-                const res = f.await(self.io);
-                if (res) |err| log.err("Task failed during shutdown: {}", .{err});
-            }
-            futures.deinit(self.allocator);
-        }
-
-        while (!self.shutdown.load(.acquire)) {
-            const incoming = self.socket.receiveTimeout(self.io, recv_buf[0..], timeout) catch |err| switch (err) {
-                error.Timeout => continue,
-                else => return err,
-            };
-
-            const task = Task.init(self.allocator, incoming.from, incoming.data) catch |err| {
-                log.err("Failed to allocate task: {}", .{err});
-                continue;
-            };
-
-            const future = Io.async(self.io, Server.handleTask, .{ self, task });
-            if (future.any_future == null) {
-                const res = future.result;
-                if (res) |err| log.err("Task failed: {}", .{err});
-            } else {
-                try futures.append(self.allocator, future);
-                if (futures.items.len >= MAX_INFLIGHT) {
-                    try self.drainCompleted(&futures);
-                }
-            }
-        }
-    }
-
-    fn drainCompleted(self: *Server, futures: *std.ArrayList(Io.Future(TaskResult))) !void {
-        if (futures.items.len == 0) return;
-
-        var any_futures: [MAX_INFLIGHT]*Io.AnyFuture = undefined;
-        var indices: [MAX_INFLIGHT]usize = undefined;
-        var count: usize = 0;
-
-        for (futures.items, 0..) |f, i| {
-            if (f.any_future) |af| {
-                any_futures[count] = af;
-                indices[count] = i;
-                count += 1;
-            }
-        }
-
-        if (count == 0) return;
-
-        const ready_index = try self.io.vtable.select(self.io.userdata, any_futures[0..count]);
-        self.awaitOne(futures, indices[ready_index]);
-    }
-
-    fn awaitOne(self: *Server, futures: *std.ArrayList(Io.Future(TaskResult)), index: usize) void {
-        var future = futures.items[index];
-        const res = future.await(self.io);
-        if (res) |err| log.err("Task failed: {}", .{err});
-        _ = futures.swapRemove(index);
-    }
-
-    fn handleTask(self: *Server, task: *Task) TaskResult {
-        defer task.deinit();
-        self.processRequest(task) catch |err| return err;
-        return null;
-    }
-
-    fn processRequest(self: *Server, task: *Task) !void {
-        if (task.data.len < 12) return;
-
-        var reader = std.Io.Reader.fixed(task.data);
-        var request = Message.Message.decode(self.allocator, &reader) catch {
-            const id = readIdFromWire(task.data);
-            var err_msg = createDnsError(self.allocator, id, false, .format_error);
-            defer err_msg.deinit();
-            try self.sendMessage(task.from, &err_msg);
+        var request = MessageReader.parse(data) catch {
+            const id = readIdFromWire(data);
+            var err_msg = createDnsError(id, false, .format_error);
+            defer err_msg.deinit(allocator);
+            try responder.sendMessage(from, &err_msg);
             return;
         };
-        defer request.deinit();
 
-        if (request.questions.items.len == 0) {
-            var err_msg = createDnsError(self.allocator, request.header.id, request.header.flags.recursion_desired, .format_error);
-            defer err_msg.deinit();
-            try self.sendMessage(task.from, &err_msg);
+        if (request.header.qd_count == 0) {
+            var err_msg = createDnsError(request.header.id, request.header.flags.recursion_desired, .format_error);
+            defer err_msg.deinit(allocator);
+            try responder.sendMessage(from, &err_msg);
             return;
         }
 
-        var response = Message.Message.init(self.allocator);
-        defer response.deinit();
-        try createDnsResponse(&response, &request);
+        var response = Message.Message.init();
+        defer response.deinit(allocator);
+        try createDnsResponse(allocator, &response, &request);
 
-        if (request.questions.items.len == 1) {
-            var qname_buf: [BUFFER_SIZE]u8 = undefined;
-            const q = &request.questions.items[0];
-            const qname = try q.qname.print(qname_buf[0..], q.qtype);
-            const key = hashFn(qname);
+        if (request.header.qd_count == 1) {
+            var q = (try request.nextQuestion()) orelse return error.BadQuestion;
+            defer q.deinit(allocator);
 
-            if (self.cacheGet(key)) |cached| {
-                const elapsed = elapsedSeconds(self.io, cached.stored_at);
-                try appendWithElapsed(&response, &cached.message, elapsed);
-                try self.sendMessage(task.from, &response);
+            var qname = try q.qname.toOwned(allocator);
+            defer qname.deinit(allocator);
+            const key = CacheKey{
+                .qname = qname,
+                .qtype = q.qtype,
+            };
+
+            if (try self.cache_hub.get(io, allocator, &key)) |cached| {
+                var owned_cached = cached;
+                defer self.cache_hub.freeValue(allocator, &owned_cached);
+                try appendCachedAnswers(allocator, &response, &owned_cached);
+                try responder.sendMessage(from, &response);
                 return;
             }
 
-            var upstream = self.queryUpstream(task.data) catch |err| {
-                var err_msg = createDnsError(self.allocator, request.header.id, request.header.flags.recursion_desired, .server_failure);
-                defer err_msg.deinit();
-                try self.sendMessage(task.from, &err_msg);
+            var upstream = self.queryUpstream(io, allocator, data) catch |err| {
+                var err_msg = createDnsError(request.header.id, request.header.flags.recursion_desired, .server_failure);
+                defer err_msg.deinit(allocator);
+                try responder.sendMessage(from, &err_msg);
                 return err;
             };
-            var upstream_owned = true;
-            defer if (upstream_owned) upstream.deinit();
+            defer upstream.deinit(allocator);
 
             if (upstream.header.flags.response_code == .no_error) {
-                if (self.cachePut(key, upstream)) |_| {
-                    upstream_owned = false;
-                } else |err| {
+                self.cachePut(io, allocator, &qname, q.qtype, &upstream) catch |err| {
                     log.err("Cache put failed: {}", .{err});
-                }
+                };
             } else {
-                var err_msg = createDnsError(self.allocator, request.header.id, request.header.flags.recursion_desired, upstream.header.flags.response_code);
-                defer err_msg.deinit();
-                try self.sendMessage(task.from, &err_msg);
+                var err_msg = createDnsError(request.header.id, request.header.flags.recursion_desired, upstream.header.flags.response_code);
+                defer err_msg.deinit(allocator);
+                try responder.sendMessage(from, &err_msg);
                 return;
             }
 
-            try appendWithElapsed(&response, &upstream, 0);
-            try self.sendMessage(task.from, &response);
+            try appendWithElapsed(allocator, &response, &upstream, 0);
+            try responder.sendMessage(from, &response);
             return;
         }
 
         // Fallback for multi-question requests: no cache, just forward.
-        var upstream_multi = self.queryUpstream(task.data) catch |err| {
-            var err_msg = createDnsError(self.allocator, request.header.id, request.header.flags.recursion_desired, .server_failure);
-            defer err_msg.deinit();
-            try self.sendMessage(task.from, &err_msg);
+        var upstream_multi = self.queryUpstream(io, allocator, data) catch |err| {
+            var err_msg = createDnsError(request.header.id, request.header.flags.recursion_desired, .server_failure);
+            defer err_msg.deinit(allocator);
+            try responder.sendMessage(from, &err_msg);
             return err;
         };
-        defer upstream_multi.deinit();
-        try appendWithElapsed(&response, &upstream_multi, 0);
-        try self.sendMessage(task.from, &response);
+        defer upstream_multi.deinit(allocator);
+        try appendWithElapsed(allocator, &response, &upstream_multi, 0);
+        try responder.sendMessage(from, &response);
     }
 
-    fn queryUpstream(self: *Server, data: []const u8) !Message.Message {
-        var upstream_socket = try self.openUpstreamSocket();
-        defer upstream_socket.close(self.io);
+    fn queryUpstream(self: *Server, io: Io, allocator: Allocator, data: []const u8) !Message.Message {
+        var upstream_socket = try self.openUpstreamSocket(io);
+        defer upstream_socket.close(io);
 
-        try upstream_socket.send(self.io, &self.upstream_addr, data);
+        try upstream_socket.send(io, &self.upstream_addr, data);
 
         var upstream_buf: [BUFFER_SIZE]u8 = undefined;
         const upstream_timeout = Io.Timeout{ .duration = .{ .raw = Io.Duration.fromMilliseconds(UPSTREAM_TIMEOUT_MS), .clock = .awake } };
-        const upstream_msg = try upstream_socket.receiveTimeout(self.io, upstream_buf[0..], upstream_timeout);
+        const upstream_msg = try upstream_socket.receiveTimeout(io, upstream_buf[0..], upstream_timeout);
 
         var upstream_reader = std.Io.Reader.fixed(upstream_msg.data);
-        return try Message.Message.decode(self.allocator, &upstream_reader);
+        return try Message.Message.decode(allocator, &upstream_reader);
     }
 
-    fn sendMessage(self: *Server, to: net.IpAddress, message: *Message.Message) !void {
-        var out_buf: [BUFFER_SIZE]u8 = undefined;
-        var writer = std.Io.Writer.fixed(&out_buf);
-        try message.encode(&writer);
-        const len = writer.end;
-        try self.socket.send(self.io, &to, out_buf[0..len]);
-    }
-
-    fn cacheGet(self: *Server, key: u64) ?CachedMessage {
-        self.cache_mutex.lockUncancelable(self.io);
-        defer self.cache_mutex.unlock(self.io);
-
-        if (self.cache.get(key)) |cached| {
-            const elapsed = elapsedSeconds(self.io, cached.stored_at);
-            if (elapsed >= maxTtlSeconds(&cached.message)) {
-                var tmp = cached;
-                tmp.deinit();
-                self.cache.remove(key);
-                return null;
-            }
-            return cached;
-        }
-        return null;
-    }
-
-    fn cachePut(self: *Server, key: u64, value: Message.Message) !void {
-        self.cache_mutex.lockUncancelable(self.io);
-        defer self.cache_mutex.unlock(self.io);
-
-        if (self.cache.map.count() >= self.cache.capacity) {
-            if (self.cache.tail) |tail| {
-                tail.value.message.deinit();
-                self.cache.remove(tail.key);
-            }
-        }
-
-        if (self.cache.map.get(key)) |entry| {
-            entry.value.message.deinit();
-        }
-
-        const cached = CachedMessage{
-            .message = value,
-            .stored_at = Io.Timestamp.now(self.io, .awake),
+    fn cachePut(
+        self: *Server,
+        io: Io,
+        allocator: Allocator,
+        qname: *const Message.Name,
+        qtype: Message.Type,
+        upstream: *const Message.Message,
+    ) !void {
+        var key = CacheKey{
+            .qname = try qname.clone(allocator),
+            .qtype = qtype,
         };
-        try self.cache.put(key, cached);
+        var value = CacheValue{};
+        var transferred = false;
+        errdefer if (!transferred) {
+            key.deinit(allocator);
+            value.deinit(allocator);
+        };
+
+        for (upstream.answers.items) |*record| {
+            if (record.type == qtype or record.type == .cname) {
+                try value.appendRecord(allocator, record);
+            }
+        }
+
+        if (value.records.items.len == 0) {
+            key.deinit(allocator);
+            value.deinit(allocator);
+            return;
+        }
+        transferred = true;
+        try self.cache_hub.putBlocking(io, allocator, key, value);
     }
 
-    fn openUpstreamSocket(self: *Server) !net.Socket {
+    fn openUpstreamSocket(self: *Server, io: Io) !net.Socket {
         var bind_addr = switch (self.upstream_addr) {
             .ip4 => try net.IpAddress.parse("0.0.0.0", 0),
             .ip6 => try net.IpAddress.parse("::", 0),
         };
-        return net.IpAddress.bind(&bind_addr, self.io, .{ .mode = .dgram, .protocol = .udp });
+        return net.IpAddress.bind(&bind_addr, io, .{ .mode = .dgram, .protocol = .udp });
     }
 };
 
-fn appendWithElapsed(message: *Message.Message, other: *const Message.Message, elapsed_secs: u64) !void {
-    message.header.an_count += try appendRecordsWithTtl(message, &message.answers, other.answers.items, elapsed_secs);
-    message.header.ns_count += try appendRecordsWithTtl(message, &message.authorities, other.authorities.items, elapsed_secs);
-    message.header.ar_count += try appendRecordsWithTtl(message, &message.additionals, other.additionals.items, elapsed_secs);
+fn appendCachedAnswers(
+    allocator: Allocator,
+    message: *Message.Message,
+    cached: *const CacheValue,
+) !void {
+    for (cached.records.items) |*record| {
+        var cloned = try record.clone(allocator);
+        var transferred = false;
+        errdefer if (!transferred) cloned.deinit(allocator);
+        try message.answers.append(allocator, cloned);
+        transferred = true;
+        message.header.an_count += 1;
+    }
+}
+
+fn appendWithElapsed(
+    allocator: Allocator,
+    message: *Message.Message,
+    other: *const Message.Message,
+    elapsed_secs: u64,
+) !void {
+    message.header.an_count += try appendRecordsWithTtl(allocator, &message.answers, other.answers.items, elapsed_secs);
+    message.header.ns_count += try appendRecordsWithTtl(allocator, &message.authorities, other.authorities.items, elapsed_secs);
+    message.header.ar_count += try appendRecordsWithTtl(allocator, &message.additionals, other.additionals.items, elapsed_secs);
 }
 
 fn appendRecordsWithTtl(
-    message: *Message.Message,
+    allocator: Allocator,
     list: *std.ArrayList(Message.Record),
     records: []const Message.Record,
     elapsed_secs: u64,
@@ -333,9 +227,9 @@ fn appendRecordsWithTtl(
     var added: u16 = 0;
     for (records) |*record| {
         const remaining = ttlRemaining(record.ttl, elapsed_secs) orelse continue;
-        var cloned = try record.clone();
+        var cloned = try record.clone(allocator);
         cloned.ttl = remaining;
-        try list.append(message.allocator, cloned);
+        try list.append(allocator, cloned);
         added += 1;
     }
     return added;
@@ -361,7 +255,7 @@ fn elapsedSeconds(io: Io, stored_at: Io.Timestamp) u64 {
     return if (secs <= 0) 0 else @intCast(secs);
 }
 
-fn createDnsResponse(message: *Message.Message, packet: *Message.Message) !void {
+fn createDnsResponse(allocator: Allocator, message: *Message.Message, packet: *MessageReader) !void {
     message.header = Message.Header{
         .id = packet.header.id,
         .flags = Message.Flags{
@@ -379,15 +273,21 @@ fn createDnsResponse(message: *Message.Message, packet: *Message.Message) !void 
         .ar_count = 0,
     };
 
-    for (packet.questions.items) |*q| {
-        const cloned = try q.clone();
-        try message.questions.append(message.allocator, cloned);
+    if (packet.header.qd_count == 0) return;
+    var decoded_questions = try packet.getAllQuestions(allocator);
+    defer {
+        for (decoded_questions.items) |*q| q.deinit(allocator);
+        decoded_questions.deinit(allocator);
+    }
+    for (decoded_questions.items) |*q| {
+        const cloned = try q.clone(allocator);
+        try message.questions.append(allocator, cloned);
         message.header.qd_count += 1;
     }
 }
 
-fn createDnsError(allocator: Allocator, id: u16, rd: bool, err: Message.ResponseCode) Message.Message {
-    var message = Message.Message.init(allocator);
+fn createDnsError(id: u16, rd: bool, err: Message.ResponseCode) Message.Message {
+    var message = Message.Message.init();
     message.header = Message.Header{
         .id = id,
         .flags = Message.Flags{
@@ -456,10 +356,12 @@ fn hashFn(data: []const u8) u64 {
 }
 
 pub fn run(io: std.Io, allocator: Allocator) !void {
-    //var threaded = Io.Threaded.init(allocator, .{});
-    //defer threaded.deinit();
+    var request_buffer: [1024]CacheHub.Request = undefined;
+    var handler = try Server.init(allocator, io, .{}, &request_buffer);
+    defer handler.deinit(io);
 
-    var server = try Server.init(allocator, io, .{});
+    const DnsServer = dns_server.Server(Server);
+    var server = try DnsServer.init(allocator, io, .{ .bind_addr = "127.0.0.1", .bind_port = 53 }, &handler);
     defer server.deinit();
 
     try server.run();

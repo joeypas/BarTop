@@ -9,7 +9,7 @@ pub const Zone = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) Zone {
-        var soa = Message.Record.init(allocator, .soa);
+        var soa = Message.Record.init(.soa);
         soa.ref = true;
         return Zone{
             .soa = soa,
@@ -167,23 +167,26 @@ const ZoneParser = struct {
         const rec = try self.collectFields(tokens);
         defer self.allocator.free(rec.data);
 
-        var record = Message.Record.init(self.allocator, rec.type);
+        var record = Message.Record.init(rec.type);
         errdefer record.deinit(self.allocator);
 
         self.last_name = rec.name;
-        try record.name.parse(rec.name);
+        try record.name.parse(self.allocator, rec.name);
 
         // rhHandle relative host name
-        if (record.name.labels.items.len <= 1) {
-            try record.name.parse(self.origin.?);
+        if (record.name.labelCount() <= 1) {
+            try record.name.parse(self.allocator, self.origin.?);
         }
         record.ttl = rec.ttl;
         record.class = rec.class;
 
-        record.rdata.parse(self.allocator, rec.data) catch |err| {
+        var rdata = Message.RData.init(rec.type);
+        defer rdata.deinit(self.allocator);
+        rdata.parse(self.allocator, rec.data) catch |err| {
             std.debug.print("Err at: {s}\n", .{rec.data});
             return err;
         };
+        try record.setRData(self.allocator, &rdata);
 
         return record;
     }

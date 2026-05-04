@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    var list: [3]*std.Build.Step.Compile = undefined;
+    var list: [4]*std.Build.Step.Compile = undefined;
 
     const dns = b.addModule("dns", .{
         .target = target,
@@ -57,6 +57,15 @@ pub fn build(b: *std.Build) void {
     list[1].root_module.addImport("dns", dns);
 
     list[2] = b.addExecutable(.{
+        .name = "RecursiveResolver",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/resolver_main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    list[3] = b.addExecutable(.{
         .name = "Client",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/client.zig"),
@@ -65,8 +74,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    list[2].root_module.addImport("clap", clap.module("clap"));
-    list[2].root_module.addImport("dns", dns);
+    list[3].root_module.addImport("clap", clap.module("clap"));
+    list[3].root_module.addImport("dns", dns);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -78,7 +87,7 @@ pub fn build(b: *std.Build) void {
     // This *creates* a Run step in the build graph, to be executed when another
     // step is evaluated that depends on it. The next line below will establish
     // such a dependency.
-    const run_cmd = b.addRunArtifact(list[0]);
+    const run_cmd = b.addRunArtifact(list[1]);
 
     // By making the run step depend on the install step, it will be run from the
     // installation directory rather than directly from within the cache directory.
@@ -97,6 +106,30 @@ pub fn build(b: *std.Build) void {
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const client_step = b.step("client", "Build the client executable");
+    client_step.dependOn(&list[3].step);
+
+    const recursive_step = b.step("recursive", "Build the recursive resolver executable");
+    recursive_step.dependOn(&list[2].step);
+
+    const run_recursive_cmd = b.addRunArtifact(list[2]);
+    run_recursive_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_recursive_cmd.addArgs(args);
+    }
+
+    const run_recursive_step = b.step("recursive-run", "Run the recursive resolver executable");
+    run_recursive_step.dependOn(&run_recursive_cmd.step);
+
+    const run_client_cmd = b.addRunArtifact(list[3]);
+    run_client_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_client_cmd.addArgs(args);
+    }
+
+    const run_client_step = b.step("client-run", "Run the client executable");
+    run_client_step.dependOn(&run_client_cmd.step);
 
     const lib_unit_tests = b.addTest(.{
         .root_module = dns,

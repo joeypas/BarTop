@@ -3,22 +3,29 @@ const std = @import("std");
 
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
-const Arena = std.heap.ArenaAllocator;
 
 pub const Reader = std.Io.Reader;
 const Writer = std.Io.Writer;
 
 pub const Message = @This();
+const message_reader = @import("message_reader.zig");
+const message_header = @import("message_header.zig");
 
 pub const RData = @import("rdata.zig").RData;
 const rr = @import("rr.zig");
 pub const Question = rr.Question;
+pub const QuestionRef = rr.QuestionRef;
 pub const Record = rr.Record;
+pub const RecordRef = rr.RecordRef;
 pub const Type = rr.Type;
 pub const Class = rr.Class;
 pub const Name = rr.Name;
+pub const NameRef = rr.NameRef;
+pub const ResponseCode = message_header.ResponseCode;
+pub const OpCode = message_header.OpCode;
+pub const Flags = message_header.Flags;
+pub const Header = message_header.Header;
 
-allocator: Allocator,
 header: Header,
 questions: ArrayList(Question),
 answers: ArrayList(Record),
@@ -27,9 +34,15 @@ additionals: ArrayList(Record),
 /// Is this message a refrence to another
 ref: bool = false,
 
-pub fn init(allocator: Allocator) Message {
+pub const DecodeOptions = struct {
+    decode_questions: bool = true,
+    decode_answers: bool = true,
+    decode_authorities: bool = true,
+    decode_additionals: bool = true,
+};
+
+pub fn init() Message {
     return .{
-        .allocator = allocator,
         .header = .{},
         .questions = .empty,
         .answers = .empty,
@@ -38,74 +51,62 @@ pub fn init(allocator: Allocator) Message {
     };
 }
 
-pub fn deinit(self: *Message) void {
+pub fn deinit(self: *Message, allocator: Allocator) void {
     if (!self.ref) {
         for (self.questions.items) |*question| {
-            question.deinit(self.allocator);
+            question.deinit(allocator);
         }
     }
-    self.questions.deinit(self.allocator);
+    self.questions.deinit(allocator);
 
     if (!self.ref) {
         for (self.answers.items) |*answer| {
-            answer.deinit(self.allocator);
+            answer.deinit(allocator);
         }
     }
-    self.answers.deinit(self.allocator);
+    self.answers.deinit(allocator);
 
     if (!self.ref) {
         for (self.authorities.items) |*answer| {
-            answer.deinit(self.allocator);
+            answer.deinit(allocator);
         }
     }
-    self.authorities.deinit(self.allocator);
+    self.authorities.deinit(allocator);
 
     if (!self.ref) {
         for (self.additionals.items) |*answer| {
-            answer.deinit(self.allocator);
+            answer.deinit(allocator);
         }
     }
-    self.additionals.deinit(self.allocator);
+    self.additionals.deinit(allocator);
 }
 
 pub fn decode(allocator: Allocator, reader: *Reader) !Message {
-    const header = try Header.decode(reader);
-    var questions: ArrayList(Question) = .empty;
+    return decodeWithOptions(allocator, reader, .{});
+}
 
-    for (0..header.qd_count) |_| {
-        const question = try questions.addOne(allocator);
-        question.* = try Question.decode(allocator, reader);
+pub fn decodeWithOptions(allocator: Allocator, reader: *Reader, options: DecodeOptions) !Message {
+    var msg = Message.init();
+    errdefer msg.deinit(allocator);
+    var parsed = try message_reader.MessageReader.initAt(reader.buffer[0..reader.end], reader.seek);
+
+    msg.header = parsed.header;
+
+    if (options.decode_questions) {
+        msg.questions = try parsed.getAllQuestions(allocator);
+    }
+    if (options.decode_answers) {
+        msg.answers = try parsed.getAllAnswers(allocator);
+    }
+    if (options.decode_authorities) {
+        msg.authorities = try parsed.getAllAuthorities(allocator);
+    }
+    if (options.decode_additionals) {
+        msg.additionals = try parsed.getAllAdditionals(allocator);
     }
 
-    var answers: ArrayList(Record) = .empty;
-
-    for (0..header.an_count) |_| {
-        const answer = try answers.addOne(allocator);
-        answer.* = try Record.decode(allocator, reader);
-    }
-
-    var authorities: ArrayList(Record) = .empty;
-
-    for (0..header.ns_count) |_| {
-        const authority = try authorities.addOne(allocator);
-        authority.* = try Record.decode(allocator, reader);
-    }
-
-    var additionals: ArrayList(Record) = .empty;
-
-    for (0..header.ar_count) |_| {
-        const additional = try additionals.addOne(allocator);
-        additional.* = try Record.decode(allocator, reader);
-    }
-
-    return Message{
-        .allocator = allocator,
-        .header = header,
-        .questions = questions,
-        .answers = answers,
-        .authorities = authorities,
-        .additionals = additionals,
-    };
+    reader.seek = parsed.section_offsets.end;
+    return msg;
 }
 
 pub fn encode(self: *Message, writer: *Writer) !void {
@@ -128,27 +129,27 @@ pub fn encode(self: *Message, writer: *Writer) !void {
     }
 }
 
-pub fn addQuestion(self: *Message) !*Question {
-    const q = try self.questions.addOne(self.allocator);
-    q.* = Question.init(self.allocator);
+pub fn addQuestion(self: *Message, allocator: Allocator) !*Question {
+    const q = try self.questions.addOne(allocator);
+    q.* = Question.init();
     return q;
 }
 
-pub fn addAnswer(self: *Message, rtype: Type) !*Record {
-    const a = try self.answers.addOne(self.allocator);
-    a.* = Record.init(self.allocator, rtype);
+pub fn addAnswer(self: *Message, allocator: Allocator, rtype: Type) !*Record {
+    const a = try self.answers.addOne(allocator);
+    a.* = Record.init(rtype);
     return a;
 }
 
-pub fn addAuthority(self: *Message, rtype: Type) !*Record {
-    const a = try self.answers.addOne(self.allocator);
-    a.* = Record.init(self.allocator, rtype);
+pub fn addAuthority(self: *Message, allocator: Allocator, rtype: Type) !*Record {
+    const a = try self.authorities.addOne(allocator);
+    a.* = Record.init(rtype);
     return a;
 }
 
-pub fn addAdditional(self: *Message, rtype: Type) !*Record {
-    const a = try self.answers.addOne(self.allocator);
-    a.* = Record.init(self.allocator, rtype);
+pub fn addAdditional(self: *Message, allocator: Allocator, rtype: Type) !*Record {
+    const a = try self.additionals.addOne(allocator);
+    a.* = Record.init(rtype);
     return a;
 }
 
@@ -201,99 +202,3 @@ pub fn format(self: Message, writer: *std.Io.Writer) !void {
         try writer.print("{f}\n", .{record});
     }
 }
-
-pub const ResponseCode = enum(u4) {
-    no_error,
-    format_error,
-    server_failure,
-    name_error,
-    not_implemented,
-    refused,
-    _,
-};
-
-pub const OpCode = enum(u4) {
-    query,
-    iquery,
-    status,
-    _,
-};
-
-// bitcast to go from struct to int
-pub const Flags = packed struct {
-    response_code: ResponseCode = .no_error,
-    check_disable: bool = false,
-    authenticated: bool = false,
-    z: u1 = 0,
-    recursion_available: bool = false,
-    recursion_desired: bool = false,
-    truncated: bool = false,
-    authoritative: bool = false,
-    op_code: OpCode = .query,
-    response: bool = false,
-};
-
-pub const Header = packed struct {
-    id: u16 = 0,
-    flags: Flags = .{},
-    /// Question count
-    qd_count: u16 = 0,
-    /// Answer count
-    an_count: u16 = 0,
-    /// Authority count
-    ns_count: u16 = 0,
-    // Additional count
-    ar_count: u16 = 0,
-
-    pub fn decode(reader: *Reader) !Header {
-        return Header{
-            .id = try reader.takeInt(u16, .big),
-            .flags = @bitCast(try reader.takeInt(u16, .big)),
-            .qd_count = try reader.takeInt(u16, .big),
-            .an_count = try reader.takeInt(u16, .big),
-            .ns_count = try reader.takeInt(u16, .big),
-            .ar_count = try reader.takeInt(u16, .big),
-        };
-    }
-
-    pub fn encode(self: *Header, writer: *Writer) !usize {
-        try writer.writeInt(u16, self.id, .big);
-        try writer.writeInt(u16, @bitCast(self.flags), .big);
-        try writer.writeInt(u16, self.qd_count, .big);
-        try writer.writeInt(u16, self.an_count, .big);
-        try writer.writeInt(u16, self.ns_count, .big);
-        try writer.writeInt(u16, self.ar_count, .big);
-        return 12;
-    }
-
-    pub fn print(self: *Header, buf: []u8) ![]u8 {
-        return std.fmt.bufPrint(
-            buf,
-            \\Header: [
-            \\  id: {d},
-            \\  flags: {any},
-            \\  qd_count: {d},
-            \\  an_count: {d},
-            \\  ns_count: {d},
-            \\  ar_count: {d},
-            \\],
-        ,
-            .{ self.id, self.flags, self.qd_count, self.an_count, self.ns_count, self.ar_count },
-        );
-    }
-
-    pub fn format(self: Header, writer: *std.Io.Writer) !void {
-        try writer.print(
-            \\Header: [
-            \\  id: {d},
-            \\  flags: {any},
-            \\  qd_count: {d},
-            \\  an_count: {d},
-            \\  ns_count: {d},
-            \\  ar_count: {d},
-            \\],
-        ,
-            .{ self.id, self.flags, self.qd_count, self.an_count, self.ns_count, self.ar_count },
-        );
-    }
-};
