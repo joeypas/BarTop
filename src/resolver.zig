@@ -709,11 +709,9 @@ pub const Resolver = struct {
 
         for (ns_value.records.items) |*record| {
             if (record.type != .ns) continue;
-            var parsed = try record.parseRData(allocator);
-            defer parsed.deinit(allocator);
 
             var entry = NameServerEntry{
-                .name = try parsed.ns.name.clone(allocator),
+                .name = try record.rdata.ns.name.clone(allocator),
             };
             errdefer entry.deinit(allocator);
 
@@ -752,11 +750,8 @@ pub const Resolver = struct {
                 saw_ns = true;
             }
 
-            var parsed = try record.parseRData(allocator);
-            defer parsed.deinit(allocator);
-
             var entry = NameServerEntry{
-                .name = try parsed.ns.name.clone(allocator),
+                .name = try record.rdata.ns.name.clone(allocator),
             };
             errdefer entry.deinit(allocator);
 
@@ -764,13 +759,11 @@ pub const Resolver = struct {
                 if (!Message.Name.equalsIgnoreCase(&additional.name, &entry.name)) continue;
                 switch (additional.type) {
                     .a => {
-                        var parsed_a = try additional.parseRData(allocator);
-                        defer parsed_a.deinit(allocator);
+                        const parsed_a = additional.rdata;
                         try entry.addrs.append(allocator, withPort(.{ .ip4 = parsed_a.a.addr }, 53));
                     },
                     .aaaa => {
-                        var parsed_aaaa = try additional.parseRData(allocator);
-                        defer parsed_aaaa.deinit(allocator);
+                        const parsed_aaaa = additional.rdata;
                         try entry.addrs.append(allocator, withPort(.{ .ip6 = parsed_aaaa.aaaa.addr }, 53));
                     },
                     else => {},
@@ -836,14 +829,12 @@ pub const Resolver = struct {
                 if (!Message.Name.equalsIgnoreCase(&record.name, &entry.name)) continue;
                 switch (record.type) {
                     .a => {
-                        var parsed = try record.parseRData(allocator);
-                        defer parsed.deinit(allocator);
+                        const parsed = record.rdata;
                         try entry.addrs.append(allocator, withPort(.{ .ip4 = parsed.a.addr }, 53));
                         log.debug("found cached A glue: ns={f} addr={f}", .{ entry.name, entry.addrs.items[entry.addrs.items.len - 1] });
                     },
                     .aaaa => {
-                        var parsed = try record.parseRData(allocator);
-                        defer parsed.deinit(allocator);
+                        const parsed = record.rdata;
                         try entry.addrs.append(allocator, withPort(.{ .ip6 = parsed.aaaa.addr }, 53));
                         log.debug("found cached AAAA glue: ns={f} addr={f}", .{ entry.name, entry.addrs.items[entry.addrs.items.len - 1] });
                     },
@@ -992,13 +983,6 @@ fn normalizedRecordForCache(allocator: Allocator, record: *const Message.Record)
     var out = try record.clone(allocator);
     errdefer out.deinit(allocator);
 
-    var parsed = record.parseRData(allocator) catch |err| {
-        log.debug("leaving cached rdata raw: name={f} type={any} parse_err={}", .{ record.name, record.type, err });
-        return out;
-    };
-    defer parsed.deinit(allocator);
-
-    try out.setRData(allocator, &parsed);
     return out;
 }
 

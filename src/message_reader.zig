@@ -204,7 +204,7 @@ pub const MessageReader = struct {
         }
 
         var it = self.answerIterator();
-        while (try it.next()) |record| {
+        while (try it.next()) |*record| {
             var owned = try record.toOwned(allocator);
             errdefer owned.deinit(allocator);
             try out.append(allocator, owned);

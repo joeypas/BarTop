@@ -305,21 +305,28 @@ pub const Type = enum(u16) {
     ptr = 12,
     mx = 15,
     txt = 16,
+    sig = 24,
     aaaa = 28,
     srv = 33,
+    naptr = 35,
+    dname = 39,
+    opt = 41,
+    ds = 43,
+    sshfp = 44,
+    rrsig = 46,
+    nsec = 47,
+    dnskey = 48,
+    nsec3 = 50,
+    nsec3param = 51,
+    tlsa = 52,
+    cds = 59,
+    cdnskey = 60,
     svcb = 64,
     https = 65,
-    //opt = 41,
-    rrsig = 46,
-    //nsec = 47,
-    dnskey = 48,
-    ds = 43,
-    sig = 24,
-    nsec3 = 50,
     //ixfr = 251,
     //axfr = 252,
     //any = 255,
-    //caa = 257,
+    caa = 257,
     data = 65535,
     _,
 };
@@ -457,113 +464,19 @@ pub const QuestionRef = struct {
     }
 };
 
-pub const RawRData = union(enum) {
-    borrowed: []const u8,
-    owned: ArrayList(u8),
-    packet: struct {
-        bytes: ArrayList(u8),
-        offset: usize,
-        size: usize,
-    },
-
-    pub fn init() RawRData {
-        return .{ .owned = .empty };
-    }
-
-    pub fn fromBorrowed(bytes: []const u8) RawRData {
-        return .{ .borrowed = bytes };
-    }
-
-    pub fn deinit(self: *RawRData, allocator: Allocator) void {
-        switch (self.*) {
-            .borrowed => {},
-            .owned => |*list| list.deinit(allocator),
-            .packet => |*packet| packet.bytes.deinit(allocator),
-        }
-        self.* = init();
-    }
-
-    pub fn asSlice(self: *const RawRData) []const u8 {
-        return switch (self.*) {
-            .borrowed => |bytes| bytes,
-            .owned => |list| list.items,
-            .packet => |packet| packet.bytes.items[packet.offset..][0..packet.size],
-        };
-    }
-
-    pub fn clone(self: *const RawRData, allocator: Allocator) !RawRData {
-        switch (self.*) {
-            .packet => |packet| {
-                var out = try ArrayList(u8).initCapacity(allocator, packet.bytes.items.len);
-                out.appendSliceAssumeCapacity(packet.bytes.items);
-                return .{ .packet = .{
-                    .bytes = out,
-                    .offset = packet.offset,
-                    .size = packet.size,
-                } };
-            },
-            else => {
-                const bytes = self.asSlice();
-                var out = try ArrayList(u8).initCapacity(allocator, bytes.len);
-                out.appendSliceAssumeCapacity(bytes);
-                return .{ .owned = out };
-            },
-        }
-    }
-
-    pub fn fromPacket(allocator: Allocator, packet: []const u8, offset: usize, size: usize) !RawRData {
-        if (offset > packet.len or size > packet.len - offset) return error.EndOfStream;
-        var out = try ArrayList(u8).initCapacity(allocator, packet.len);
-        out.appendSliceAssumeCapacity(packet);
-        return .{ .packet = .{
-            .bytes = out,
-            .offset = offset,
-            .size = size,
-        } };
-    }
-
-    pub fn set(self: *RawRData, allocator: Allocator, bytes: []const u8) !void {
-        var out = try ArrayList(u8).initCapacity(allocator, bytes.len);
-        errdefer out.deinit(allocator);
-        out.appendSliceAssumeCapacity(bytes);
-        self.deinit(allocator);
-        self.* = .{ .owned = out };
-    }
-
-    pub fn encode(self: *const RawRData, writer: *Writer) !usize {
-        return writer.write(self.asSlice());
-    }
-
-    fn reader(self: *const RawRData) Reader {
-        switch (self.*) {
-            .packet => |packet| {
-                var out = Reader.fixed(packet.bytes.items);
-                out.seek = packet.offset;
-                return out;
-            },
-            else => return Reader.fixed(self.asSlice()),
-        }
-    }
-
-    pub fn format(self: RawRData, writer: *std.Io.Writer) !void {
-        var copy = self;
-        try writer.print("<raw rdata {d} bytes>", .{copy.asSlice().len});
-    }
-};
-
 pub const Record = struct {
     name: Name,
     type: Type = .a,
     class: Class = .in,
     ttl: u32 = 0,
     rdlength: u16 = 4,
-    rdata: RawRData,
+    rdata: RData,
     ref: bool = false,
 
     pub fn init(@"type": Type) Record {
         return Record{
             .name = Name.init(),
-            .rdata = RawRData.init(),
+            .rdata = RData.init(@"type"),
             .type = @"type",
             .rdlength = 0,
         };
@@ -601,7 +514,7 @@ pub const Record = struct {
         len += 2;
         try writer.writeInt(u32, self.ttl, .big);
         len += 4;
-        try writer.writeInt(u16, @intCast(self.rdata.asSlice().len), .big);
+        try writer.writeInt(u16, @intCast(self.rdata.getLen()), .big);
         len += 2;
         len += try self.rdata.encode(writer);
 
@@ -643,27 +556,6 @@ pub const Record = struct {
             .rdlength = self.rdlength,
             .rdata = rdata,
         };
-    }
-
-    pub fn parseRData(self: *const Record, allocator: Allocator) !RData {
-        var reader = self.rdata.reader();
-        var parsed = try RData.decode(allocator, self.type, self.rdata.asSlice().len, &reader);
-        errdefer parsed.deinit(allocator);
-        try parsed.ensureOwned(allocator);
-        return parsed;
-    }
-
-    pub fn setRData(self: *Record, allocator: Allocator, rdata: *RData) !void {
-        const len = rdata.getLen();
-        var buf = try allocator.alloc(u8, len);
-        defer allocator.free(buf);
-
-        var writer = Writer.fixed(buf);
-        const written = try rdata.encode(&writer);
-        try writer.flush();
-
-        try self.rdata.set(allocator, buf[0..written]);
-        self.rdlength = @intCast(written);
     }
 };
 
@@ -728,7 +620,7 @@ pub const RecordRef = struct {
     pub fn toOwned(self: RecordRef, allocator: Allocator) !Record {
         var name = try self.name.toOwned(allocator);
         errdefer name.deinit(allocator);
-        const raw = try RawRData.fromPacket(allocator, self.rdata.packet, self.rdata.offset, self.rdata.size);
+        const raw = try self.rdata.toOwned(allocator);
         return .{
             .name = name,
             .type = self.type,

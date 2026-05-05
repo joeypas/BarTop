@@ -1,15 +1,11 @@
 pub const Message = @import("message.zig");
 pub const MessageReader = @import("message_reader.zig").MessageReader;
 const rr = @import("rr.zig");
-pub const dnssec = @import("dnssec.zig");
-pub const util = @import("util/root.zig");
 pub const dns_server = @import("dns_server.zig");
 pub const server = @import("stub_resolver_async.zig");
 pub const resolver = @import("resolver.zig");
 const Reader = std.Io.Reader;
 const Writer = std.Io.Writer;
-
-pub const Zone = @import("zone.zig").Zone;
 
 const std = @import("std");
 test "name encode/decode" {
@@ -312,9 +308,9 @@ test "deferred rdata parsing keeps packet context for compressed names" {
     const alloc = std.testing.allocator;
     const packet = [_]u8{
         0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-        0x07, 'e',  'x',  'a',  'm',  'p',  'l',  'e',  0x03, 'c',  'o',  'm',  0x00,
-        0x00, 0x01, 0x00, 0x01,
-        0xc0, 0x0c, 0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x02, 0xc0, 0x0c,
+        0x07, 'e',  'x',  'a',  'm',  'p',  'l',  'e',  0x03, 'c',  'o',  'm',
+        0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x05, 0x00, 0x01, 0x00,
+        0x00, 0x00, 0x3c, 0x00, 0x02, 0xc0, 0x0c,
     };
 
     var reader = Reader.fixed(packet[0..]);
