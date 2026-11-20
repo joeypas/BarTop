@@ -2,12 +2,22 @@ pub const Message = @import("message.zig");
 pub const MessageReader = @import("message_reader.zig").MessageReader;
 const rr = @import("rr.zig");
 pub const dns_server = @import("dns_server.zig");
-pub const server = @import("stub_resolver_async.zig");
-pub const resolver = @import("resolver.zig");
+pub const fetch = @import("fetch.zig");
+pub const fetch_manager = @import("fetch_manager.zig");
 const Reader = std.Io.Reader;
 const Writer = std.Io.Writer;
+pub const xev = @import("xev");
+
+pub const UDP = xev.UDP;
 
 const std = @import("std");
+
+fn setRecordRData(allocator: std.mem.Allocator, record: *Message.Record, rdata: *const Message.RData) !void {
+    record.rdata.deinit(allocator);
+    record.rdata = try rdata.clone(allocator);
+    record.rdlength = @intCast(record.rdata.wireLen());
+}
+
 test "name encode/decode" {
     const alloc = std.testing.allocator;
     var name = Message.Name.init();
@@ -95,7 +105,7 @@ test "record encode/decode" {
     var rdata = Message.RData.init(.a);
     defer rdata.deinit(alloc);
     rdata.a.addr = .{ .bytes = .{ 1, 2, 3, 4 }, .port = 0 };
-    try record.setRData(alloc, &rdata);
+    try setRecordRData(alloc, &record, &rdata);
 
     var buf: [128]u8 = undefined;
     var fbs = Writer.fixed(&buf);
@@ -114,7 +124,7 @@ test "record encode/decode" {
     try std.testing.expectEqualStrings(name1, name2);
     try std.testing.expectEqual(record.ttl, decoded.ttl);
     try std.testing.expectEqual(record.type, decoded.type);
-    try std.testing.expectEqualSlices(u8, record.rdata.asSlice(), decoded.rdata.asSlice());
+    try std.testing.expectEqualSlices(u8, &record.rdata.a.addr.bytes, &decoded.rdata.a.addr.bytes);
 }
 
 test "message encode/decode" {
@@ -138,13 +148,11 @@ test "message encode/decode" {
     ardata.nsec3.flags = 244;
     ardata.nsec3.iterations = 22;
     try ardata.nsec3.salt.appendSlice(alloc, "12345");
-    ardata.nsec3.salt_len = @intCast(ardata.nsec3.salt.asSlice().len);
     try ardata.nsec3.hash.appendSlice(alloc, "123456");
-    ardata.nsec3.hash_len = @intCast(ardata.nsec3.hash.asSlice().len);
     try ardata.nsec3.type_bitmap.appendSlice(alloc, "LSKDJFOISDFH");
 
     a.ttl = 120;
-    try a.setRData(alloc, &ardata);
+    try setRecordRData(alloc, a, &ardata);
 
     var buf: [1024]u8 = undefined;
     var fbs = Writer.fixed(&buf);
@@ -173,14 +181,13 @@ test "message encode/decode" {
     const aname2 = try da.name.allocPrint(alloc);
     defer alloc.free(aname2);
     try std.testing.expectEqualStrings(aname1, aname2);
-    var parsed_da = try da.parseRData(alloc);
-    defer parsed_da.deinit(alloc);
+    const parsed_da = &da.rdata;
     try std.testing.expectEqual(ardata.nsec3.hash_algorithm, parsed_da.nsec3.hash_algorithm);
     try std.testing.expectEqual(ardata.nsec3.flags, parsed_da.nsec3.flags);
     try std.testing.expectEqual(ardata.nsec3.iterations, parsed_da.nsec3.iterations);
-    try std.testing.expectEqual(ardata.nsec3.salt_len, parsed_da.nsec3.salt_len);
+    try std.testing.expectEqual(ardata.nsec3.salt.asSlice().len, parsed_da.nsec3.salt.asSlice().len);
     try std.testing.expectEqualSlices(u8, ardata.nsec3.salt.asSlice(), parsed_da.nsec3.salt.asSlice());
-    try std.testing.expectEqual(ardata.nsec3.hash_len, parsed_da.nsec3.hash_len);
+    try std.testing.expectEqual(ardata.nsec3.hash.asSlice().len, parsed_da.nsec3.hash.asSlice().len);
     try std.testing.expectEqualSlices(u8, ardata.nsec3.hash.asSlice(), parsed_da.nsec3.hash.asSlice());
     try std.testing.expectEqualSlices(u8, ardata.nsec3.type_bitmap.asSlice(), parsed_da.nsec3.type_bitmap.asSlice());
     try std.testing.expectEqual(a.ttl, da.ttl);
@@ -207,7 +214,7 @@ test "message decode with skipped sections and message reader lazy access" {
     var ardata = Message.RData.init(.a);
     defer ardata.deinit(alloc);
     ardata.a.addr = .{ .bytes = .{ 1, 2, 3, 4 }, .port = 0 };
-    try a.setRData(alloc, &ardata);
+    try setRecordRData(alloc, a, &ardata);
 
     var buf: [1024]u8 = undefined;
     var writer = Writer.fixed(&buf);
@@ -266,7 +273,7 @@ test "message reader next and getAll accessors" {
     var ardata = Message.RData.init(.a);
     defer ardata.deinit(alloc);
     ardata.a.addr = .{ .bytes = .{ 8, 8, 8, 8 }, .port = 0 };
-    try a.setRData(alloc, &ardata);
+    try setRecordRData(alloc, a, &ardata);
 
     var buf: [1024]u8 = undefined;
     var writer = Writer.fixed(&buf);
@@ -320,10 +327,7 @@ test "deferred rdata parsing keeps packet context for compressed names" {
     const answer = &decoded.answers.items[0];
     try std.testing.expectEqual(Message.Type.cname, answer.type);
 
-    var parsed = try answer.parseRData(alloc);
-    defer parsed.deinit(alloc);
-
-    const target = try parsed.cname.name.allocPrint(alloc);
+    const target = try answer.rdata.cname.name.allocPrint(alloc);
     defer alloc.free(target);
     try std.testing.expectEqualStrings("example.com.", target);
 }

@@ -19,14 +19,26 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const libxev = b.dependency("libxev", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
-    var list: [4]*std.Build.Step.Compile = undefined;
+    var list: [2]*std.Build.Step.Compile = undefined;
 
     const dns = b.addModule("dns", .{
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/root.zig"),
     });
+    dns.addImport("xev", libxev.module("xev"));
+
+    const transport = b.addModule("transport", .{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/transport.zig"),
+    });
+    transport.addImport("xev", libxev.module("xev"));
 
     list[0] = b.addLibrary(.{
         .name = "dns",
@@ -45,27 +57,6 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(docs_step);
 
     list[1] = b.addExecutable(.{
-        .name = "StubResolver",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    //list[1].root_module.addImport("xev", xev.module("xev"));
-    list[1].root_module.addImport("dns", dns);
-
-    list[2] = b.addExecutable(.{
-        .name = "RecursiveResolver",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/resolver_main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    list[3] = b.addExecutable(.{
         .name = "Client",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/client.zig"),
@@ -74,8 +65,8 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    list[3].root_module.addImport("clap", clap.module("clap"));
-    list[3].root_module.addImport("dns", dns);
+    list[1].root_module.addImport("clap", clap.module("clap"));
+    list[1].root_module.addImport("dns", dns);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -84,62 +75,63 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(exe);
     }
 
-    // This *creates* a Run step in the build graph, to be executed when another
-    // step is evaluated that depends on it. The next line below will establish
-    // such a dependency.
-    const run_cmd = b.addRunArtifact(list[1]);
-
-    // By making the run step depend on the install step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    // This is not necessary, however, if the application depends on other installed
-    // files, this ensures they will be present and in the expected location.
-    run_cmd.step.dependOn(b.getInstallStep());
-
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
-    // This creates a build step. It will be visible in the `zig build --help` menu,
-    // and can be selected like this: `zig build run`
-    // This will evaluate the `run` step rather than the default, which is "install".
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    const client_step = b.step("client", "Build the client executable");
-    client_step.dependOn(&list[3].step);
-
-    const recursive_step = b.step("recursive", "Build the recursive resolver executable");
-    recursive_step.dependOn(&list[2].step);
-
-    const run_recursive_cmd = b.addRunArtifact(list[2]);
-    run_recursive_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_recursive_cmd.addArgs(args);
-    }
-
-    const run_recursive_step = b.step("recursive-run", "Run the recursive resolver executable");
-    run_recursive_step.dependOn(&run_recursive_cmd.step);
-
-    const run_client_cmd = b.addRunArtifact(list[3]);
-    run_client_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_client_cmd.addArgs(args);
-    }
-
-    const run_client_step = b.step("client-run", "Run the client executable");
-    run_client_step.dependOn(&run_client_cmd.step);
-
-    const lib_unit_tests = b.addTest(.{
-        .root_module = dns,
-    });
-
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+    // const client_step = b.step("client", "Build the client executable");
+    // client_step.dependOn(&list[1].step);
+    //
+    // const run_client_cmd = b.addRunArtifact(list[1]);
+    // run_client_cmd.step.dependOn(b.getInstallStep());
+    // if (b.args) |args| {
+    //     run_client_cmd.addArgs(args);
+    // }
+    //
+    // const run_client_step = b.step("client-run", "Run the client executable");
+    // run_client_step.dependOn(&run_client_cmd.step);
+    //
+    // const lib_unit_tests = b.addTest(.{
+    //     .root_module = dns,
+    // });
+    //
+    // const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
+    //
+    // const fetch_tests = b.addTest(.{
+    //     .root_module = b.createModule(.{
+    //         .root_source_file = b.path("src/fetch.zig"),
+    //         .target = target,
+    //         .optimize = optimize,
+    //     }),
+    // });
+    // fetch_tests.root_module.addImport("xev", libxev.module("xev"));
+    //
+    // const run_fetch_tests = b.addRunArtifact(fetch_tests);
+    //
+    // const fetch_manager_tests = b.addTest(.{
+    //     .root_module = b.createModule(.{
+    //         .root_source_file = b.path("src/fetch_manager.zig"),
+    //         .target = target,
+    //         .optimize = optimize,
+    //     }),
+    // });
+    // fetch_manager_tests.root_module.addImport("xev", libxev.module("xev"));
+    //
+    // const run_fetch_manager_tests = b.addRunArtifact(fetch_manager_tests);
+    //
+    // const transport_tests = b.addTest(.{
+    //     .root_module = b.createModule(.{
+    //         .root_source_file = b.path("src/transport.zig"),
+    //         .target = target,
+    //         .optimize = optimize,
+    //     }),
+    // });
+    // transport_tests.root_module.addImport("xev", libxev.module("xev"));
+    //
+    // const run_transport_tests = b.addRunArtifact(transport_tests);
 
     // Similar to creating the run step earlier, this exposes a `test` step to
     // the `zig build --help` menu, providing a way for the user to request
     // running the unit tests.
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
+    // const test_step = b.step("test", "Run unit tests");
+    // test_step.dependOn(&run_lib_unit_tests.step);
+    // test_step.dependOn(&run_fetch_tests.step);
+    // test_step.dependOn(&run_fetch_manager_tests.step);
+    // test_step.dependOn(&run_transport_tests.step);
 }

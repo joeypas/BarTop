@@ -1,0 +1,1215 @@
+1771976705089 info(recursive_resolver): Root servers prioritized: 26
+1771976705089 info(recursive_resolver): Recursive resolver listening on 0.0.0.0:53
+1771976705089 info(recursive_resolver): Run start
+1771976705090 info(recursive_resolver): Spawning workers (max_workers=64)
+1771976705092 info(recursive_resolver): Spawned workers: 64
+1771976705092 info(recursive_resolver): Workers spawned: 64
+1771976705093 info(recursive_resolver): Entering receive loop
+1771976705093 info(recursive_resolver): Received 38 bytes from 10.0.0.5:59702
+1771976705093 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53205
+1771976705093 info(recursive_resolver): Worker picked up task from 10.0.0.5:59702
+1771976705093 info(recursive_resolver): Received 38 bytes from 10.0.0.5:60622
+1771976705093 info(recursive_resolver): Worker picked up task from 10.0.0.5:53205
+1771976705093 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976705093 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976705093 info(recursive_resolver): Worker picked up task from 10.0.0.5:60622
+1771976705093 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976705094 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64523
+1771976705094 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59395
+1771976705094 info(recursive_resolver): Worker picked up task from 10.0.0.5:64523
+1771976705094 info(recursive_resolver): Worker picked up task from 10.0.0.5:593951771976705094 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+
+1771976705094 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976705094 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64885
+1771976705094 info(recursive_resolver): Received 43 bytes from 10.0.0.5:49859
+1771976705094 info(recursive_resolver): Received 43 bytes from 10.0.0.5:53790
+1771976705094 info(recursive_resolver): Worker picked up task from 10.0.0.5:648851771976705095 info(recursive_resolver): Worker picked up task from 10.0.0.5:49859
+1771976705095 info(recursive_resolver): Resolve start: 14-courier.push.apple.com. .aaaa
+1771976705095 info(recursive_resolver): Worker picked up task from 10.0.0.5:53790
+1771976705095 info(recursive_resolver): Resolve start: 14-courier.push.apple.com. .a
+
+1771976705095 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976705283 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=1 elapsed_ms=188
+1771976705299 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=2 elapsed_ms=204
+1771976705389 info(recursive_resolver): Resolve done: 14-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=294
+1771976705397 info(recursive_resolver): Resolve done: 14-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=302
+1771976705538 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=445
+1771976705604 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=510
+1771976715772 info(recursive_resolver): Received 31 bytes from 10.0.0.5:60449
+1771976715772 info(recursive_resolver): Worker picked up task from 10.0.0.5:60449
+1771976715772 info(recursive_resolver): Resolve start: ipv4only.arpa. .aaaa
+1771976715776 info(recursive_resolver): Received 36 bytes from 10.0.0.5:55929
+1771976715776 info(recursive_resolver): Worker picked up task from 10.0.0.5:55929
+1771976715777 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976715998 info(recursive_resolver): Received 43 bytes from 10.0.0.5:57823
+1771976715998 info(recursive_resolver): Worker picked up task from 10.0.0.5:57823
+1771976715998 info(recursive_resolver): Resolve start: 16-courier.push.apple.com. .aaaa
+1771976716001 info(recursive_resolver): Received 43 bytes from 10.0.0.5:62236
+1771976716001 info(recursive_resolver): Worker picked up task from 10.0.0.5:62236
+1771976716001 info(recursive_resolver): Resolve start: 16-courier.push.apple.com. .a
+1771976716005 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49302
+1771976716005 info(recursive_resolver): Worker picked up task from 10.0.0.5:49302
+1771976716006 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976716018 info(recursive_resolver): Received 36 bytes from 10.0.0.5:54949
+1771976716018 info(recursive_resolver): Worker picked up task from 10.0.0.5:54949
+1771976716018 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976716033 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61262
+1771976716033 info(recursive_resolver): Worker picked up task from 10.0.0.5:61262
+1771976716033 info(recursive_resolver): Resolve start: isq11.mzstatic.com. .aaaa
+1771976716037 info(recursive_resolver): Received 36 bytes from 10.0.0.5:54050
+1771976716037 info(recursive_resolver): Worker picked up task from 10.0.0.5:54050
+1771976716037 info(recursive_resolver): Resolve start: isq11.mzstatic.com. .a
+1771976716082 info(recursive_resolver): Received 23 bytes from 10.0.0.5:52527
+1771976716082 info(recursive_resolver): Worker picked up task from 10.0.0.5:52527
+1771976716082 info(recursive_resolver): Resolve start: local. .soa
+1771976716117 info(recursive_resolver): Resolve done: local. .soa rcode=.name_error answers=0 elapsed_ms=35
+1771976716131 info(recursive_resolver): Resolve done: isq11.mzstatic.com. .aaaa rcode=.no_error answers=0 elapsed_ms=98
+1771976716136 info(recursive_resolver): Resolve done: isq11.mzstatic.com. .a rcode=.no_error answers=1 elapsed_ms=99
+1771976716273 info(recursive_resolver): Resolve done: 16-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=275
+1771976716279 info(recursive_resolver): Resolve done: 16-courier.push.apple.com. .a rcode=.no_error answers=5 elapsed_ms=277
+1771976716304 info(recursive_resolver): Resolve done: ipv4only.arpa. .aaaa rcode=.no_error answers=0 elapsed_ms=531
+1771976716346 info(recursive_resolver): Received 41 bytes from 10.0.0.5:64205
+1771976716346 info(recursive_resolver): Worker picked up task from 10.0.0.5:64205
+1771976716347 info(recursive_resolver): Denied qtype 65 for gspe79-ssl.ls.apple.com.
+1771976716349 info(recursive_resolver): Received 41 bytes from 10.0.0.5:58985
+1771976716349 info(recursive_resolver): Worker picked up task from 10.0.0.5:58985
+1771976716349 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .aaaa
+1771976716352 info(recursive_resolver): Received 41 bytes from 10.0.0.5:56180
+1771976716352 info(recursive_resolver): Worker picked up task from 10.0.0.5:56180
+1771976716352 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .a
+1771976716648 info(recursive_resolver): Received 50 bytes from 10.0.0.5:60880
+1771976716648 info(recursive_resolver): Worker picked up task from 10.0.0.5:60880
+1771976716648 info(recursive_resolver): Resolve start: fp-us-verizon.rcs.telephony.goog. @enumFromInt(35)
+1771976716706 info(recursive_resolver): Received 36 bytes from 10.0.0.5:55929
+1771976716706 info(recursive_resolver): Worker picked up task from 10.0.0.5:55929
+1771976716707 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976716803 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=453
+1771976717188 info(recursive_resolver): Received 43 bytes from 10.0.0.5:57823
+1771976717189 info(recursive_resolver): Received 43 bytes from 10.0.0.5:62236
+1771976717189 info(recursive_resolver): 1771976717189 info(recursive_resolver): Worker picked up task from 10.0.0.5:62236
+1771976717189 info(recursive_resolver): Resolve start: 16-courier.push.apple.com. .a
+1771976717189 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49302
+Worker picked up task from 10.0.0.5:57823
+1771976717189 info(recursive_resolver): Resolve start: 16-courier.push.apple.com. .aaaa
+1771976717189 info(recursive_resolver): Resolve done: 16-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976717189 info(recursive_resolver): Received 36 bytes from 10.0.0.5:54949
+1771976717189 info(recursive_resolver): Resolve done: 16-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976717189 info(recursive_resolver): Worker picked up task from 10.0.0.5:54949
+1771976717189 info(recursive_resolver): Worker picked up task from 10.0.0.5:49302
+1771976717190 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976717190 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976717206 info(recursive_resolver): Resolve done: fp-us-verizon.rcs.telephony.goog. @enumFromInt(35) rcode=.no_error answers=1 elapsed_ms=558
+1771976717210 info(recursive_resolver): Received 42 bytes from 10.0.0.5:53930
+1771976717210 info(recursive_resolver): Worker picked up task from 10.0.0.5:53930
+1771976717210 info(recursive_resolver): Denied qtype 65 for 1-courier.push.apple.com.
+1771976717213 info(recursive_resolver): Received 42 bytes from 10.0.0.5:55747
+1771976717213 info(recursive_resolver): Worker picked up task from 10.0.0.5:55747
+1771976717213 info(recursive_resolver): Resolve start: 1-courier.push.apple.com. .aaaa
+1771976717216 info(recursive_resolver): Received 42 bytes from 10.0.0.5:61694
+1771976717216 info(recursive_resolver): Worker picked up task from 10.0.0.5:61694
+1771976717216 info(recursive_resolver): Resolve start: 1-courier.push.apple.com. .a
+1771976717219 info(recursive_resolver): Received 61 bytes from 10.0.0.5:64547
+1771976717220 info(recursive_resolver): Worker picked up task from 10.0.0.5:64547
+1771976717220 info(recursive_resolver): Resolve start: _sips._tcp.fp-us-verizon.rcs.telephony.goog. .srv
+1771976717221 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .a rcode=.no_error answers=5 elapsed_ms=868
+1771976717226 info(recursive_resolver): Received 50 bytes from 10.0.0.5:61768
+1771976717226 info(recursive_resolver): Worker picked up task from 10.0.0.5:61768
+1771976717226 info(recursive_resolver): Resolve start: fp-us-verizon.rcs.telephony.goog. .aaaa
+1771976717233 info(recursive_resolver): Received 50 bytes from 10.0.0.5:50772
+1771976717234 info(recursive_resolver): Worker picked up task from 10.0.0.5:50772
+1771976717234 info(recursive_resolver): Resolve start: fp-us-verizon.rcs.telephony.goog. .a
+1771976717332 info(recursive_resolver): Resolve done: _sips._tcp.fp-us-verizon.rcs.telephony.goog. .srv rcode=.no_error answers=2 elapsed_ms=112
+1771976717339 info(recursive_resolver): Resolve done: fp-us-verizon.rcs.telephony.goog. .aaaa rcode=.no_error answers=1 elapsed_ms=112
+1771976717362 info(recursive_resolver): Resolve done: fp-us-verizon.rcs.telephony.goog. .a rcode=.no_error answers=1 elapsed_ms=127
+1771976717450 info(recursive_resolver): Received 41 bytes from 10.0.0.5:64205
+1771976717450 info(recursive_resolver): Received 41 bytes from 10.0.0.5:58985
+1771976717450 info(recursive_resolver): Worker picked up task from 10.0.0.5:64205
+1771976717450 info(recursive_resolver): Received 41 bytes from 10.0.0.5:56180
+1771976717450 info(recursive_resolver): Worker picked up task from 10.0.0.5:58985
+1771976717450 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .aaaa
+1771976717450 info(recursive_resolver): Denied qtype 65 for gspe79-ssl.ls.apple.com.
+1771976717451 info(recursive_resolver): Worker picked up task from 10.0.0.5:56180
+1771976717451 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .a
+1771976717451 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976717451 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976717566 info(recursive_resolver): Resolve done: 1-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=353
+1771976717570 info(recursive_resolver): Received 46 bytes from 10.0.0.5:56758
+1771976717571 info(recursive_resolver): Worker picked up task from 10.0.0.5:56758
+1771976717571 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976717573 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50228
+1771976717573 info(recursive_resolver): Worker picked up task from 10.0.0.5:50228
+1771976717573 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976717576 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50555
+1771976717576 info(recursive_resolver): Worker picked up task from 10.0.0.5:50555
+1771976717576 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976717590 info(recursive_resolver): Resolve done: 1-courier.push.apple.com. .a rcode=.no_error answers=5 elapsed_ms=373
+1771976718338 info(recursive_resolver): Received 42 bytes from 10.0.0.5:53930
+1771976718338 info(recursive_resolver): Received 42 bytes from 10.0.0.5:55747
+1771976718338 info(recursive_resolver): Worker picked up task from 10.0.0.5:53930
+1771976718338 info(recursive_resolver): Received 42 bytes from 10.0.0.5:61694
+1771976718338 info(recursive_resolver): Worker picked up task from 10.0.0.5:55747
+1771976718338 info(recursive_resolver): Resolve start: 1-courier.push.apple.com. .aaaa
+1771976718339 info(recursive_resolver): Worker picked up task from 10.0.0.5:61694
+1771976718339 info(recursive_resolver): Resolve start: 1-courier.push.apple.com. .a
+1771976718338 info(recursive_resolver): Denied qtype 65 for 1-courier.push.apple.com.
+1771976718339 info(recursive_resolver): Resolve done: 1-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976718339 info(recursive_resolver): Resolve done: 1-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976718368 info(recursive_resolver): Received 43 bytes from 10.0.0.5:54493
+1771976718369 info(recursive_resolver): Worker picked up task from 10.0.0.5:54493
+1771976718369 info(recursive_resolver): Resolve start: 15-courier.push.apple.com. .aaaa
+1771976718372 info(recursive_resolver): Received 43 bytes from 10.0.0.5:62824
+1771976718372 info(recursive_resolver): Worker picked up task from 10.0.0.5:62824
+1771976718372 info(recursive_resolver): Resolve start: 15-courier.push.apple.com. .a
+1771976718516 info(recursive_resolver): Received 46 bytes from 10.0.0.5:56758
+1771976718516 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50228
+1771976718516 info(recursive_resolver): Worker picked up task from 10.0.0.5:567581771976718516 info(recursive_resolver): Worker picked up task from 10.0.0.5:50228
+1771976718516 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+
+1771976718516 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50555
+1771976718517 info(recursive_resolver): Worker picked up task from 10.0.0.5:50555
+1771976718517 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976718517 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976718517 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976718517 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976718665 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=1089
+1771976718675 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=1102
+1771976718721 info(recursive_resolver): Received 36 bytes from 10.0.0.5:55929
+1771976718721 info(recursive_resolver): Worker picked up task from 10.0.0.5:55929
+1771976718721 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976718732 info(recursive_resolver): Resolve done: 15-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=363
+1771976718737 info(recursive_resolver): Resolve done: 15-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=364
+1771976719241 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49302
+1771976719241 info(recursive_resolver): Worker picked up task from 10.0.0.5:49302
+1771976719241 info(recursive_resolver): Received 36 bytes from 10.0.0.5:54949
+1771976719241 info(recursive_resolver): Worker picked up task from 10.0.0.5:54949
+1771976719242 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976719242 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976719246 info(recursive_resolver): Received 37 bytes from 10.0.0.5:63086
+1771976719246 info(recursive_resolver): Worker picked up task from 10.0.0.5:63086
+1771976719247 info(recursive_resolver): Denied qtype 65 for mask-api.icloud.com.
+1771976719249 info(recursive_resolver): Received 37 bytes from 10.0.0.5:59305
+1771976719249 info(recursive_resolver): Worker picked up task from 10.0.0.5:59305
+1771976719249 info(recursive_resolver): Resolve start: mask-api.icloud.com. .aaaa
+1771976719252 info(recursive_resolver): Received 37 bytes from 10.0.0.5:60186
+1771976719252 info(recursive_resolver): Worker picked up task from 10.0.0.5:60186
+1771976719252 info(recursive_resolver): Resolve start: mask-api.icloud.com. .a
+1771976719413 info(recursive_resolver): Received 43 bytes from 10.0.0.5:54493
+1771976719414 info(recursive_resolver): Worker picked up task from 10.0.0.5:54493
+1771976719414 info(recursive_resolver): Resolve start: 15-courier.push.apple.com. .aaaa
+1771976719414 info(recursive_resolver): Received 43 bytes from 10.0.0.5:62824
+1771976719414 info(recursive_resolver): Received 41 bytes from 10.0.0.5:64205
+1771976719414 info(recursive_resolver): Resolve done: 15-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976719415 info(recursive_resolver): Worker picked up task from 10.0.0.5:62824
+1771976719415 info(recursive_resolver): Worker picked up task from 10.0.0.5:64205
+1771976719415 info(recursive_resolver): Denied qtype 65 for gspe79-ssl.ls.apple.com.
+1771976719415 info(recursive_resolver): Resolve start: 15-courier.push.apple.com. .a
+1771976719416 info(recursive_resolver): Resolve done: 15-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976719432 info(recursive_resolver): Received 43 bytes from 10.0.0.5:53931
+1771976719432 info(recursive_resolver): Worker picked up task from 10.0.0.5:53931
+1771976719433 info(recursive_resolver): Denied qtype 65 for 18-courier.push.apple.com.
+1771976719436 info(recursive_resolver): Received 43 bytes from 10.0.0.5:52937
+1771976719437 info(recursive_resolver): Worker picked up task from 10.0.0.5:52937
+1771976719437 info(recursive_resolver): Resolve start: 18-courier.push.apple.com. .aaaa
+1771976719442 info(recursive_resolver): Received 43 bytes from 10.0.0.5:61364
+1771976719442 info(recursive_resolver): Worker picked up task from 10.0.0.5:61364
+1771976719442 info(recursive_resolver): Resolve start: 18-courier.push.apple.com. .a
+1771976719801 info(recursive_resolver): Resolve done: 18-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=364
+1771976719829 info(recursive_resolver): Resolve done: 18-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=387
+1771976719982 info(recursive_resolver): Resolve done: mask-api.icloud.com. .a rcode=.no_error answers=4 elapsed_ms=729
+1771976719998 info(recursive_resolver): Resolve done: mask-api.icloud.com. .aaaa rcode=.no_error answers=5 elapsed_ms=748
+1771976720254 info(recursive_resolver): Received 42 bytes from 10.0.0.5:53930
+1771976720255 info(recursive_resolver): Received 37 bytes from 10.0.0.5:63086
+1771976720255 info(recursive_resolver): Received 37 bytes from 10.0.0.5:59305
+1771976720255 info(recursive_resolver): Received 37 bytes from 10.0.0.5:60186
+1771976720255 info(recursive_resolver): Worker picked up task from 10.0.0.5:53930
+1771976720255 info(recursive_resolver): Worker picked up task from 10.0.0.5:63086
+1771976720255 info(recursive_resolver): Worker picked up task from 10.0.0.5:59305
+1771976720256 info(recursive_resolver): Resolve start: mask-api.icloud.com. .aaaa
+1771976720256 info(recursive_resolver): Worker picked up task from 10.0.0.5:60186
+1771976720256 info(recursive_resolver): Resolve start: mask-api.icloud.com. .a
+1771976720256 info(recursive_resolver): Denied qtype 65 for 1-courier.push.apple.com.
+1771976720256 info(recursive_resolver): Resolve done: mask-api.icloud.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976720256 info(recursive_resolver): Denied qtype 65 for mask-api.icloud.com.
+1771976720256 info(recursive_resolver): Resolve done: mask-api.icloud.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976720572 info(recursive_resolver): Received 43 bytes from 10.0.0.5:53931
+1771976720572 info(recursive_resolver): Received 43 bytes from 10.0.0.5:52937
+1771976720572 info(recursive_resolver): Worker picked up task from 10.0.0.5:53931
+1771976720572 info(recursive_resolver): Received 43 bytes from 10.0.0.5:61364
+1771976720572 info(recursive_resolver): Received 46 bytes from 10.0.0.5:56758
+1771976720572 info(recursive_resolver): Worker picked up task from 10.0.0.5:52937
+1771976720572 info(recursive_resolver): Resolve start: 18-courier.push.apple.com. .aaaa
+1771976720573 info(recursive_resolver): Worker picked up task from 10.0.0.5:61364
+1771976720573 info(recursive_resolver): Denied qtype 65 for 18-courier.push.apple.com.1771976720573 info(recursive_resolver): Resolve start: 18-courier.push.apple.com. .a
+1771976720573 info(recursive_resolver): Worker picked up task from 10.0.0.5:56758
+1771976720573 info(recursive_resolver): Resolve done: 18-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+
+1771976720573 info(recursive_resolver): Resolve done: 18-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976720573 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976720985 info(recursive_resolver): Received 42 bytes from 10.0.0.5:57728
+1771976720985 info(recursive_resolver): Worker picked up task from 10.0.0.5:57728
+1771976720985 info(recursive_resolver): Resolve start: 8-courier.push.apple.com. .aaaa
+1771976720988 info(recursive_resolver): Received 42 bytes from 10.0.0.5:55666
+1771976720988 info(recursive_resolver): Worker picked up task from 10.0.0.5:55666
+1771976720988 info(recursive_resolver): Resolve start: 8-courier.push.apple.com. .a
+1771976721028 info(recursive_resolver): Received 40 bytes from 10.0.0.5:56400
+1771976721028 info(recursive_resolver): Worker picked up task from 10.0.0.5:56400
+1771976721028 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976721031 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51897
+1771976721031 info(recursive_resolver): Worker picked up task from 10.0.0.5:51897
+1771976721031 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976721035 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51895
+1771976721035 info(recursive_resolver): Worker picked up task from 10.0.0.5:51895
+1771976721035 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976721366 info(recursive_resolver): Resolve done: 8-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=380
+1771976721372 info(recursive_resolver): Resolve done: 8-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=384
+1771976721506 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=474
+1771976721548 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=512
+1771976722004 info(recursive_resolver): Received 42 bytes from 10.0.0.5:57728
+1771976722004 info(recursive_resolver): Received 42 bytes from 10.0.0.5:55666
+1771976722004 info(recursive_resolver): Worker picked up task from 10.0.0.5:57728
+1771976722004 info(recursive_resolver): Worker picked up task from 10.0.0.5:55666
+1771976722004 info(recursive_resolver): Resolve start: 8-courier.push.apple.com. .a
+1771976722004 info(recursive_resolver): Resolve start: 8-courier.push.apple.com. .aaaa
+1771976722004 info(recursive_resolver): Resolve done: 8-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976722004 info(recursive_resolver): Resolve done: 8-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976722022 info(recursive_resolver): Received 43 bytes from 10.0.0.5:63023
+1771976722022 info(recursive_resolver): Worker picked up task from 10.0.0.5:63023
+1771976722022 info(recursive_resolver): Denied qtype 65 for 35-courier.push.apple.com.
+1771976722024 info(recursive_resolver): Received 43 bytes from 10.0.0.5:64509
+1771976722025 info(recursive_resolver): Worker picked up task from 10.0.0.5:64509
+1771976722025 info(recursive_resolver): Resolve start: 35-courier.push.apple.com. .aaaa
+1771976722027 info(recursive_resolver): Received 43 bytes from 10.0.0.5:57444
+1771976722028 info(recursive_resolver): Worker picked up task from 10.0.0.5:57444
+1771976722028 info(recursive_resolver): Resolve start: 35-courier.push.apple.com. .a
+1771976722068 info(recursive_resolver): Received 40 bytes from 10.0.0.5:56400
+1771976722068 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51897
+1771976722068 info(recursive_resolver): Worker picked up task from 10.0.0.5:56400
+1771976722068 info(recursive_resolver): Worker picked up task from 10.0.0.5:51897
+1771976722068 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976722068 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976722068 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976722069 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51895
+1771976722069 info(recursive_resolver): Worker picked up task from 10.0.0.5:51895
+1771976722069 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976722069 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976722320 info(recursive_resolver): Received 37 bytes from 10.0.0.5:63086
+1771976722320 info(recursive_resolver): Worker picked up task from 10.0.0.5:63086
+1771976722320 info(recursive_resolver): Denied qtype 65 for mask-api.icloud.com.
+1771976722379 info(recursive_resolver): Resolve done: 35-courier.push.apple.com. .a rcode=.no_error answers=5 elapsed_ms=351
+1771976722402 info(recursive_resolver): Resolve done: 35-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=377
+1771976722570 info(recursive_resolver): Received 43 bytes from 10.0.0.5:53931
+1771976722570 info(recursive_resolver): Worker picked up task from 10.0.0.5:53931
+1771976722570 info(recursive_resolver): Denied qtype 65 for 18-courier.push.apple.com.
+1771976722925 info(recursive_resolver): Received 36 bytes from 10.0.0.5:55929
+1771976722926 info(recursive_resolver): Worker picked up task from 10.0.0.5:55929
+1771976722926 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976723028 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49302
+1771976723028 info(recursive_resolver): Received 43 bytes from 10.0.0.5:63023
+1771976723028 info(recursive_resolver): Worker picked up task from 10.0.0.5:49302
+1771976723028 info(recursive_resolver): Worker picked up task from 10.0.0.5:63023
+1771976723028 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976723028 info(recursive_resolver): Received 43 bytes from 10.0.0.5:64509
+1771976723028 info(recursive_resolver): Denied qtype 65 for 35-courier.push.apple.com.
+1771976723029 info(recursive_resolver): Received 43 bytes from 10.0.0.5:57444
+1771976723029 info(recursive_resolver): 1771976723029 info(recursive_resolver): Worker picked up task from 10.0.0.5:57444
+1771976723029 info(recursive_resolver): Resolve start: 35-courier.push.apple.com. .a
+Worker picked up task from 10.0.0.5:64509
+1771976723029 info(recursive_resolver): Resolve start: 35-courier.push.apple.com. .aaaa
+1771976723029 info(recursive_resolver): Resolve done: 35-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976723029 info(recursive_resolver): Resolve done: 35-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976724155 info(recursive_resolver): Received 40 bytes from 10.0.0.5:56400
+1771976724155 info(recursive_resolver): Worker picked up task from 10.0.0.5:56400
+1771976724155 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976724578 info(recursive_resolver): Received 46 bytes from 10.0.0.5:56758
+1771976724578 info(recursive_resolver): Worker picked up task from 10.0.0.5:56758
+1771976724579 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976725155 info(recursive_resolver): Received 43 bytes from 10.0.0.5:63023
+1771976725155 info(recursive_resolver): Worker picked up task from 10.0.0.5:63023
+1771976725155 info(recursive_resolver): Denied qtype 65 for 35-courier.push.apple.com.
+1771976726312 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50277
+1771976726313 info(recursive_resolver): Worker picked up task from 10.0.0.5:50277
+1771976726314 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976726318 info(recursive_resolver): Received 40 bytes from 10.0.0.5:55101
+1771976726318 info(recursive_resolver): Worker picked up task from 10.0.0.5:55101
+1771976726319 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976726319 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976726330 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64671
+1771976726330 info(recursive_resolver): Worker picked up task from 10.0.0.5:64671
+1771976726330 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976726331 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976727129 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59678
+1771976727129 info(recursive_resolver): Worker picked up task from 10.0.0.5:59678
+1771976727130 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976727211 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50277
+1771976727212 info(recursive_resolver): Worker picked up task from 10.0.0.5:50277
+1771976727212 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976728148 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59678
+1771976728149 info(recursive_resolver): Worker picked up task from 10.0.0.5:59678
+1771976728149 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976728459 info(recursive_resolver): Received 27 bytes from 10.0.0.5:52962
+1771976728459 info(recursive_resolver): Worker picked up task from 10.0.0.5:52962
+1771976728459 info(recursive_resolver): Resolve start: sentry.io. .aaaa
+1771976728462 info(recursive_resolver): Received 27 bytes from 10.0.0.5:58916
+1771976728462 info(recursive_resolver): Worker picked up task from 10.0.0.5:58916
+1771976728462 info(recursive_resolver): Resolve start: sentry.io. .a
+1771976728662 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52295
+1771976728662 info(recursive_resolver): Worker picked up task from 10.0.0.5:52295
+1771976728662 info(recursive_resolver): Denied qtype 65 for o1069899.ingest.us.sentry.io.
+1771976728665 info(recursive_resolver): Received 46 bytes from 10.0.0.5:61866
+1771976728665 info(recursive_resolver): Worker picked up task from 10.0.0.5:61866
+1771976728665 info(recursive_resolver): Resolve start: o1069899.ingest.us.sentry.io. .aaaa
+1771976728668 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51820
+1771976728668 info(recursive_resolver): Worker picked up task from 10.0.0.5:51820
+1771976728668 info(recursive_resolver): Resolve start: o1069899.ingest.us.sentry.io. .a
+1771976729094 info(recursive_resolver): Resolve done: sentry.io. .a rcode=.no_error answers=1 elapsed_ms=631
+1771976729094 info(recursive_resolver): Resolve done: sentry.io. .aaaa rcode=.no_error answers=0 elapsed_ms=634
+1771976729233 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50277
+1771976729233 info(recursive_resolver): Worker picked up task from 10.0.0.5:50277
+1771976729234 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976729341 info(recursive_resolver): Resolve done: o1069899.ingest.us.sentry.io. .aaaa rcode=.no_error answers=1 elapsed_ms=676
+1771976729422 info(recursive_resolver): Resolve done: o1069899.ingest.us.sentry.io. .a rcode=.no_error answers=1 elapsed_ms=754
+1771976729690 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52295
+1771976729690 info(recursive_resolver): Worker picked up task from 10.0.0.5:52295
+1771976729691 info(recursive_resolver): Denied qtype 65 for o1069899.ingest.us.sentry.io.
+1771976729996 info(recursive_resolver): Received 30 bytes from 10.0.0.5:59211
+1771976729996 info(recursive_resolver): Worker picked up task from 10.0.0.5:59211
+1771976729997 info(recursive_resolver): Denied qtype 65 for www.ebay.com.
+1771976729999 info(recursive_resolver): Received 30 bytes from 10.0.0.5:53143
+1771976729999 info(recursive_resolver): Worker picked up task from 10.0.0.5:53143
+1771976729999 info(recursive_resolver): Resolve start: www.ebay.com. .aaaa
+1771976730001 info(recursive_resolver): Received 30 bytes from 10.0.0.5:57271
+1771976730002 info(recursive_resolver): Worker picked up task from 10.0.0.5:57271
+1771976730002 info(recursive_resolver): Resolve start: www.ebay.com. .a
+1771976730146 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59678
+1771976730147 info(recursive_resolver): Worker picked up task from 10.0.0.5:59678
+1771976730147 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976730548 info(recursive_resolver): Resolve done: www.ebay.com. .a rcode=.no_error answers=12 elapsed_ms=545
+1771976730671 info(recursive_resolver): Resolve done: www.ebay.com. .aaaa rcode=.no_error answers=3 elapsed_ms=672
+1771976731016 info(recursive_resolver): Received 30 bytes from 10.0.0.5:59211
+1771976731016 info(recursive_resolver): Received 30 bytes from 10.0.0.5:53143
+1771976731016 info(recursive_resolver): Worker picked up task from 10.0.0.5:59211
+1771976731016 info(recursive_resolver): Worker picked up task from 10.0.0.5:53143
+1771976731016 info(recursive_resolver): Resolve start: www.ebay.com. .aaaa
+1771976731016 info(recursive_resolver): Received 30 bytes from 10.0.0.5:57271
+1771976731016 info(recursive_resolver): Worker picked up task from 10.0.0.5:57271
+1771976731016 info(recursive_resolver): Resolve start: www.ebay.com. .a
+1771976731016 info(recursive_resolver): Denied qtype 65 for www.ebay.com.
+1771976731017 info(recursive_resolver): Resolve done: www.ebay.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976731017 info(recursive_resolver): Resolve done: www.ebay.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976731733 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52295
+1771976731733 info(recursive_resolver): Worker picked up task from 10.0.0.5:52295
+1771976731733 info(recursive_resolver): Denied qtype 65 for o1069899.ingest.us.sentry.io.
+1771976732863 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61276
+1771976732863 info(recursive_resolver): Worker picked up task from 10.0.0.5:61276
+1771976732864 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976733038 info(recursive_resolver): Received 30 bytes from 10.0.0.5:59211
+1771976733039 info(recursive_resolver): Worker picked up task from 10.0.0.5:59211
+1771976733039 info(recursive_resolver): Denied qtype 65 for www.ebay.com.
+1771976733883 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61276
+1771976733883 info(recursive_resolver): Worker picked up task from 10.0.0.5:61276
+1771976733883 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976735931 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61276
+1771976735931 info(recursive_resolver): Worker picked up task from 10.0.0.5:61276
+1771976735932 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976737164 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59508
+1771976737165 info(recursive_resolver): Worker picked up task from 10.0.0.5:59508
+1771976737165 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976738184 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59508
+1771976738184 info(recursive_resolver): Worker picked up task from 10.0.0.5:59508
+1771976738184 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976740232 info(recursive_resolver): Received 40 bytes from 10.0.0.5:59508
+1771976740232 info(recursive_resolver): Worker picked up task from 10.0.0.5:59508
+1771976740233 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976740851 info(recursive_resolver): Received 30 bytes from 10.0.0.5:63138
+1771976740852 info(recursive_resolver): Worker picked up task from 10.0.0.5:63138
+1771976740852 info(recursive_resolver): Denied qtype 65 for www.ebay.com.
+1771976741870 info(recursive_resolver): Received 30 bytes from 10.0.0.5:63138
+1771976741871 info(recursive_resolver): Worker picked up task from 10.0.0.5:63138
+1771976741871 info(recursive_resolver): Denied qtype 65 for www.ebay.com.
+1771976743918 info(recursive_resolver): Received 30 bytes from 10.0.0.5:63138
+1771976743919 info(recursive_resolver): Worker picked up task from 10.0.0.5:63138
+1771976743919 info(recursive_resolver): Denied qtype 65 for www.ebay.com.
+1771976752217 info(recursive_resolver): Received 40 bytes from 10.0.0.5:49716
+1771976752218 info(recursive_resolver): Worker picked up task from 10.0.0.5:49716
+1771976752218 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976753237 info(recursive_resolver): Received 40 bytes from 10.0.0.5:49716
+1771976753237 info(recursive_resolver): Worker picked up task from 10.0.0.5:49716
+1771976753238 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976755388 info(recursive_resolver): Received 40 bytes from 10.0.0.5:49716
+1771976755388 info(recursive_resolver): Worker picked up task from 10.0.0.5:49716
+1771976755388 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976765428 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49270
+1771976765429 info(recursive_resolver): Worker picked up task from 10.0.0.5:49270
+1771976765429 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976766325 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49270
+1771976766327 info(recursive_resolver): Worker picked up task from 10.0.0.5:49270
+1771976766327 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976768418 info(recursive_resolver): Received 36 bytes from 10.0.0.5:49270
+1771976768418 info(recursive_resolver): Worker picked up task from 10.0.0.5:49270
+1771976768419 info(recursive_resolver): Denied qtype 65 for isq11.mzstatic.com.
+1771976779539 info(recursive_resolver): Received 50 bytes from 10.0.0.5:60141
+1771976779539 info(recursive_resolver): Worker picked up task from 10.0.0.5:60141
+1771976779539 info(recursive_resolver): Resolve start: fp-us-verizon.rcs.telephony.goog. @enumFromInt(35)
+1771976779540 info(recursive_resolver): Resolve done: fp-us-verizon.rcs.telephony.goog. @enumFromInt(35) rcode=.no_error answers=1 elapsed_ms=0
+1771976779555 info(recursive_resolver): Received 61 bytes from 10.0.0.5:52671
+1771976779555 info(recursive_resolver): Worker picked up task from 10.0.0.5:52671
+1771976779555 info(recursive_resolver): Resolve start: _sips._tcp.fp-us-verizon.rcs.telephony.goog. .srv
+1771976779556 info(recursive_resolver): Resolve done: _sips._tcp.fp-us-verizon.rcs.telephony.goog. .srv rcode=.no_error answers=2 elapsed_ms=0
+1771976779562 info(recursive_resolver): Received 50 bytes from 10.0.0.5:57508
+1771976779562 info(recursive_resolver): Worker picked up task from 10.0.0.5:57508
+1771976779562 info(recursive_resolver): Resolve start: fp-us-verizon.rcs.telephony.goog. .aaaa
+1771976779563 info(recursive_resolver): Resolve done: fp-us-verizon.rcs.telephony.goog. .aaaa rcode=.no_error answers=1 elapsed_ms=0
+1771976779567 info(recursive_resolver): Received 50 bytes from 10.0.0.5:64030
+1771976779568 info(recursive_resolver): Worker picked up task from 10.0.0.5:64030
+1771976779568 info(recursive_resolver): Resolve start: fp-us-verizon.rcs.telephony.goog. .a
+1771976779568 info(recursive_resolver): Resolve done: fp-us-verizon.rcs.telephony.goog. .a rcode=.no_error answers=1 elapsed_ms=0
+1771976779711 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52102
+1771976779712 info(recursive_resolver): Worker picked up task from 10.0.0.5:52102
+1771976779713 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976779718 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51291
+1771976779719 info(recursive_resolver): Worker picked up task from 10.0.0.5:51291
+1771976779719 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976779719 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=0
+1771976779721 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50615
+1771976779721 info(recursive_resolver): Worker picked up task from 10.0.0.5:50615
+1771976779721 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976779722 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=0
+1771976780484 info(recursive_resolver): Received 41 bytes from 10.0.0.5:64652
+1771976780484 info(recursive_resolver): Worker picked up task from 10.0.0.5:64652
+1771976780484 info(recursive_resolver): Denied qtype 65 for gspe79-ssl.ls.apple.com.
+1771976780486 info(recursive_resolver): Received 41 bytes from 10.0.0.5:54043
+1771976780486 info(recursive_resolver): Worker picked up task from 10.0.0.5:54043
+1771976780486 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .aaaa
+1771976780486 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976780487 info(recursive_resolver): Received 41 bytes from 10.0.0.5:55270
+1771976780487 info(recursive_resolver): Worker picked up task from 10.0.0.5:55270
+1771976780488 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .a
+1771976780488 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .a rcode=.no_error answers=5 elapsed_ms=0
+1771976780490 info(recursive_resolver): Received 36 bytes from 10.0.0.5:51601
+1771976780490 info(recursive_resolver): Worker picked up task from 10.0.0.5:51601
+1771976780490 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976780492 info(recursive_resolver): Received 31 bytes from 10.0.0.5:54995
+1771976780492 info(recursive_resolver): Worker picked up task from 10.0.0.5:54995
+1771976780492 info(recursive_resolver): Resolve start: ipv4only.arpa. .aaaa
+1771976780493 info(recursive_resolver): Resolve done: ipv4only.arpa. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976780494 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61316
+1771976780494 info(recursive_resolver): Worker picked up task from 10.0.0.5:61316
+1771976780495 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976780497 info(recursive_resolver): Received 39 bytes from 10.0.0.5:49964
+1771976780497 info(recursive_resolver): Worker picked up task from 10.0.0.5:49964
+1771976780498 info(recursive_resolver): Denied qtype 65 for outlook.office365.com.
+1771976780500 info(recursive_resolver): Received 39 bytes from 10.0.0.5:62539
+1771976780500 info(recursive_resolver): Worker picked up task from 10.0.0.5:62539
+1771976780501 info(recursive_resolver): Resolve start: outlook.office365.com. .aaaa
+1771976780503 info(recursive_resolver): Received 39 bytes from 10.0.0.5:56656
+1771976780503 info(recursive_resolver): Worker picked up task from 10.0.0.5:56656
+1771976780503 info(recursive_resolver): Resolve start: outlook.office365.com. .a
+1771976780598 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52102
+1771976780599 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51291
+1771976780599 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50615
+1771976780599 info(recursive_resolver): 1771976780599 info(recursive_resolver): 1771976780599 info(recursive_resolver): Worker picked up task from 10.0.0.5:50615
+Worker picked up task from 10.0.0.5:51291
+1771976780599 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976780599 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+Worker picked up task from 10.0.0.5:52102
+1771976780599 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=0
+1771976780600 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976780600 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=1
+1771976780603 info(recursive_resolver): Received 23 bytes from 10.0.0.5:59149
+1771976780603 info(recursive_resolver): Worker picked up task from 10.0.0.5:59149
+1771976780603 info(recursive_resolver): Resolve start: local. .soa
+1771976780604 info(recursive_resolver): Resolve done: local. .soa rcode=.name_error answers=0 elapsed_ms=0
+1771976781209 info(recursive_resolver): Resolve done: outlook.office365.com. .aaaa rcode=.no_error answers=9 elapsed_ms=708
+1771976782183 info(recursive_resolver): Received 31 bytes from 10.0.0.5:56042
+1771976782183 info(recursive_resolver): Worker picked up task from 10.0.0.5:56042
+1771976782183 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976782186 info(recursive_resolver): Received 31 bytes from 10.0.0.5:61961
+1771976782187 info(recursive_resolver): Worker picked up task from 10.0.0.5:61961
+1771976782187 info(recursive_resolver): Resolve start: wps.apple.com. .aaaa
+1771976782190 info(recursive_resolver): Received 31 bytes from 10.0.0.5:64412
+1771976782190 info(recursive_resolver): Worker picked up task from 10.0.0.5:64412
+1771976782190 info(recursive_resolver): Resolve start: wps.apple.com. .a
+1771976782195 info(recursive_resolver): Received 43 bytes from 10.0.0.5:49670
+1771976782195 info(recursive_resolver): Worker picked up task from 10.0.0.5:49670
+1771976782195 info(recursive_resolver): Resolve start: 22-courier.push.apple.com. .aaaa
+1771976782201 info(recursive_resolver): Received 43 bytes from 10.0.0.5:54688
+1771976782201 info(recursive_resolver): Worker picked up task from 10.0.0.5:54688
+1771976782201 info(recursive_resolver): Resolve start: 22-courier.push.apple.com. .a
+1771976782272 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51390
+1771976782272 info(recursive_resolver): Worker picked up task from 10.0.0.5:51390
+1771976782272 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976782276 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976782276 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976782276 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976782277 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976782279 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976782279 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976782279 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976782279 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976782329 info(recursive_resolver): Received 39 bytes from 10.0.0.5:58485
+1771976782330 info(recursive_resolver): Worker picked up task from 10.0.0.5:58485
+1771976782330 info(recursive_resolver): Denied qtype 65 for p157-quota.icloud.com.
+1771976782334 info(recursive_resolver): Received 39 bytes from 10.0.0.5:51667
+1771976782335 info(recursive_resolver): Worker picked up task from 10.0.0.5:51667
+1771976782335 info(recursive_resolver): Resolve start: p157-quota.icloud.com. .aaaa
+1771976782342 info(recursive_resolver): Received 39 bytes from 10.0.0.5:52740
+1771976782343 info(recursive_resolver): Worker picked up task from 10.0.0.5:52740
+1771976782343 info(recursive_resolver): Resolve start: p157-quota.icloud.com. .a
+1771976782386 info(recursive_resolver): Received 38 bytes from 10.0.0.5:63216
+1771976782386 info(recursive_resolver): Worker picked up task from 10.0.0.5:63216
+1771976782386 info(recursive_resolver): Denied qtype 65 for bag.itunes.apple.com.
+1771976782388 info(recursive_resolver): Received 38 bytes from 10.0.0.5:60512
+1771976782388 info(recursive_resolver): Worker picked up task from 10.0.0.5:60512
+1771976782388 info(recursive_resolver): Resolve start: bag.itunes.apple.com. .aaaa
+1771976782389 info(recursive_resolver): Received 38 bytes from 10.0.0.5:57817
+1771976782389 info(recursive_resolver): Worker picked up task from 10.0.0.5:57817
+1771976782389 info(recursive_resolver): Resolve start: bag.itunes.apple.com. .a
+1771976782576 err(recursive_resolver): Task failed: error.TimeBudgetExceeded
+1771976782626 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52102
+1771976782626 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51291
+1771976782626 info(recursive_resolver): Worker picked up task from 10.0.0.5:52102
+1771976782626 info(recursive_resolver): Worker picked up task from 10.0.0.5:51291
+1771976782626 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976782626 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50615
+1771976782627 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976782627 info(recursive_resolver): Worker picked up task from 10.0.0.5:50615
+1771976782627 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976782627 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=0
+1771976782627 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=0
+1771976782643 info(recursive_resolver): Received 33 bytes from 10.0.0.5:61893
+1771976782643 info(recursive_resolver): Worker picked up task from 10.0.0.5:61893
+1771976782644 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976782646 info(recursive_resolver): Received 33 bytes from 10.0.0.5:63013
+1771976782646 info(recursive_resolver): Worker picked up task from 10.0.0.5:63013
+1771976782646 info(recursive_resolver): Resolve start: mask.icloud.com. .aaaa
+1771976782656 info(recursive_resolver): Received 33 bytes from 10.0.0.5:55570
+1771976782657 info(recursive_resolver): Worker picked up task from 10.0.0.5:55570
+1771976782657 info(recursive_resolver): Resolve start: mask.icloud.com. .a
+1771976783005 info(recursive_resolver): Resolve done: 22-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=803
+1771976783005 info(recursive_resolver): Resolve done: p157-quota.icloud.com. .aaaa rcode=.no_error answers=4 elapsed_ms=670
+1771976783100 info(recursive_resolver): Resolve done: p157-quota.icloud.com. .a rcode=.no_error answers=4 elapsed_ms=757
+1771976783101 info(recursive_resolver): Resolve done: 22-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=905
+1771976783106 info(recursive_resolver): Received 33 bytes from 10.0.0.5:59871
+1771976783106 info(recursive_resolver): Worker picked up task from 10.0.0.5:59871
+1771976783106 info(recursive_resolver): Denied qtype 65 for preview.redd.it.
+1771976783110 info(recursive_resolver): Received 33 bytes from 10.0.0.5:54788
+1771976783110 info(recursive_resolver): Worker picked up task from 10.0.0.5:54788
+1771976783110 info(recursive_resolver): Resolve start: preview.redd.it. .aaaa
+1771976783112 info(recursive_resolver): Received 33 bytes from 10.0.0.5:62630
+1771976783112 info(recursive_resolver): Worker picked up task from 10.0.0.5:62630
+1771976783112 info(recursive_resolver): Resolve start: preview.redd.it. .a
+1771976783122 info(recursive_resolver): Received 36 bytes from 10.0.0.5:63170
+1771976783122 info(recursive_resolver): Worker picked up task from 10.0.0.5:63170
+1771976783122 info(recursive_resolver): Denied qtype 65 for gql-fed.reddit.com.
+1771976783125 info(recursive_resolver): Received 36 bytes from 10.0.0.5:54143
+1771976783125 info(recursive_resolver): Worker picked up task from 10.0.0.5:54143
+1771976783125 info(recursive_resolver): Resolve start: gql-fed.reddit.com. .aaaa
+1771976783129 info(recursive_resolver): Received 36 bytes from 10.0.0.5:50129
+1771976783129 info(recursive_resolver): Worker picked up task from 10.0.0.5:50129
+1771976783129 info(recursive_resolver): Resolve start: gql-fed.reddit.com. .a
+1771976783132 info(recursive_resolver): Received 30 bytes from 10.0.0.5:54741
+1771976783132 info(recursive_resolver): Worker picked up task from 10.0.0.5:54741
+1771976783132 info(recursive_resolver): Denied qtype 65 for e.reddit.com.
+1771976783133 info(recursive_resolver): Received 30 bytes from 10.0.0.5:51375
+1771976783133 info(recursive_resolver): Worker picked up task from 10.0.0.5:51375
+1771976783133 info(recursive_resolver): Resolve start: e.reddit.com. .aaaa
+1771976783134 info(recursive_resolver): Received 30 bytes from 10.0.0.5:57515
+1771976783134 info(recursive_resolver): Worker picked up task from 10.0.0.5:57515
+1771976783134 info(recursive_resolver): Resolve start: e.reddit.com. .a
+1771976783210 info(recursive_resolver): Received 31 bytes from 10.0.0.5:56042
+1771976783210 info(recursive_resolver): Worker picked up task from 10.0.0.5:56042
+1771976783211 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976783212 info(recursive_resolver): Received 31 bytes from 10.0.0.5:61961
+1771976783212 info(recursive_resolver): Received 31 bytes from 10.0.0.5:64412
+1771976783212 info(recursive_resolver): Received 43 bytes from 10.0.0.5:49670
+1771976783212 info(recursive_resolver): Received 43 bytes from 10.0.0.5:54688
+1771976783212 info(recursive_resolver): Worker picked up task from 10.0.0.5:61961
+1771976783212 info(recursive_resolver): Resolve start: wps.apple.com. .aaaa
+1771976783212 info(recursive_resolver): Resolve done: wps.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976783213 info(recursive_resolver): Worker picked up task from 10.0.0.5:64412
+1771976783213 info(recursive_resolver): 1771976783213 info(recursive_resolver): Worker picked up task from 10.0.0.5:54688
+1771976783213 info(recursive_resolver): Worker picked up task from 10.0.0.5:49670
+1771976783213 info(recursive_resolver): Resolve start: 22-courier.push.apple.com. .a
+1771976783213 info(recursive_resolver): Resolve start: 22-courier.push.apple.com. .aaaa
+Resolve start: wps.apple.com. .a
+1771976783214 info(recursive_resolver): Resolve done: 22-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976783214 info(recursive_resolver): Resolve done: wps.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976783214 info(recursive_resolver): Resolve done: 22-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976783230 info(recursive_resolver): Received 43 bytes from 10.0.0.5:56309
+1771976783230 info(recursive_resolver): Worker picked up task from 10.0.0.5:56309
+1771976783231 info(recursive_resolver): Denied qtype 65 for 25-courier.push.apple.com.
+1771976783233 info(recursive_resolver): Received 43 bytes from 10.0.0.5:60767
+1771976783233 info(recursive_resolver): Worker picked up task from 10.0.0.5:60767
+1771976783233 info(recursive_resolver): Resolve start: 25-courier.push.apple.com. .aaaa
+1771976783236 info(recursive_resolver): Received 43 bytes from 10.0.0.5:50236
+1771976783236 info(recursive_resolver): Worker picked up task from 10.0.0.5:50236
+1771976783237 info(recursive_resolver): Resolve start: 25-courier.push.apple.com. .a
+1771976783316 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51390
+1771976783316 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976783316 info(recursive_resolver): Worker picked up task from 10.0.0.5:51390
+1771976783316 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976783316 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976783317 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=1
+1771976783317 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976783318 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976783318 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976783318 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976783318 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976783360 info(recursive_resolver): Received 39 bytes from 10.0.0.5:58485
+1771976783360 info(recursive_resolver): Received 39 bytes from 10.0.0.5:51667
+1771976783360 info(recursive_resolver): Received 39 bytes from 10.0.0.5:52740
+1771976783360 info(recursive_resolver): Worker picked up task from 10.0.0.5:58485
+1771976783361 info(recursive_resolver): Denied qtype 65 for p157-quota.icloud.com.
+1771976783361 info(recursive_resolver): Worker picked up task from 10.0.0.5:51667
+1771976783361 info(recursive_resolver): Resolve start: p157-quota.icloud.com. .aaaa
+1771976783361 info(recursive_resolver): Resolve done: p157-quota.icloud.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976783361 info(recursive_resolver): Worker picked up task from 10.0.0.5:52740
+1771976783361 info(recursive_resolver): Resolve start: p157-quota.icloud.com. .a
+1771976783361 info(recursive_resolver): Resolve done: p157-quota.icloud.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976783389 info(recursive_resolver): Received 38 bytes from 10.0.0.5:63216
+1771976783389 info(recursive_resolver): Worker picked up task from 10.0.0.5:63216
+1771976783389 info(recursive_resolver): Received 38 bytes from 10.0.0.5:60512
+1771976783389 info(recursive_resolver): Denied qtype 65 for bag.itunes.apple.com.
+1771976783389 info(recursive_resolver): Received 38 bytes from 10.0.0.5:57817
+1771976783389 info(recursive_resolver): Worker picked up task from 10.0.0.5:60512
+1771976783389 info(recursive_resolver): Resolve start: bag.itunes.apple.com. .aaaa
+1771976783389 info(recursive_resolver): Worker picked up task from 10.0.0.5:57817
+1771976783390 info(recursive_resolver): Resolve start: bag.itunes.apple.com. .a
+1771976783390 info(recursive_resolver): Resolve done: bag.itunes.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976783390 info(recursive_resolver): Resolve done: bag.itunes.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976783457 info(recursive_resolver): Resolve done: mask.icloud.com. .a rcode=.no_error answers=9 elapsed_ms=800
+1771976783458 info(recursive_resolver): Resolve done: mask.icloud.com. .aaaa rcode=.no_error answers=9 elapsed_ms=811
+1771976783641 info(recursive_resolver): Received 33 bytes from 10.0.0.5:61893
+1771976783641 info(recursive_resolver): Received 33 bytes from 10.0.0.5:63013
+1771976783641 info(recursive_resolver): 1771976783641 info(recursive_resolver): Worker picked up task from 10.0.0.5:63013
+1771976783641 info(recursive_resolver): Resolve start: mask.icloud.com. .aaaa
+Worker picked up task from 10.0.0.5:61893
+1771976783641 info(recursive_resolver): Received 33 bytes from 10.0.0.5:55570
+1771976783642 info(recursive_resolver): Worker picked up task from 10.0.0.5:55570
+1771976783642 info(recursive_resolver): Resolve start: mask.icloud.com. .a
+1771976783642 info(recursive_resolver): Resolve done: mask.icloud.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976783642 info(recursive_resolver): Resolve done: mask.icloud.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976783642 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976783650 info(recursive_resolver): Received 36 bytes from 10.0.0.5:56002
+1771976783650 info(recursive_resolver): Worker picked up task from 10.0.0.5:56002
+1771976783651 info(recursive_resolver): Denied qtype 65 for mask-h2.icloud.com.
+1771976783653 info(recursive_resolver): Received 36 bytes from 10.0.0.5:62334
+1771976783654 info(recursive_resolver): Worker picked up task from 10.0.0.5:62334
+1771976783654 info(recursive_resolver): Resolve start: mask-h2.icloud.com. .aaaa
+1771976783656 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61327
+1771976783656 info(recursive_resolver): Worker picked up task from 10.0.0.5:61327
+1771976783656 info(recursive_resolver): Resolve start: mask-h2.icloud.com. .a
+1771976783679 info(recursive_resolver): Resolve done: bag.itunes.apple.com. .a rcode=.no_error answers=4 elapsed_ms=1289
+1771976783679 info(recursive_resolver): Resolve done: bag.itunes.apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=1291
+1771976784149 info(recursive_resolver): Resolve done: wps.apple.com. .a rcode=.no_error answers=5 elapsed_ms=1958
+1771976784149 info(recursive_resolver): Resolve done: e.reddit.com. .a rcode=.no_error answers=2 elapsed_ms=1015
+1771976784150 info(recursive_resolver): Resolve done: e.reddit.com. .aaaa rcode=.no_error answers=1 elapsed_ms=1016
+1771976784150 info(recursive_resolver): Resolve done: wps.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=1963
+1771976784153 info(recursive_resolver): Received 33 bytes from 10.0.0.5:59871
+1771976784153 info(recursive_resolver): Received 33 bytes from 10.0.0.5:54788
+1771976784153 info(recursive_resolver): Worker picked up task from 10.0.0.5:59871
+1771976784153 info(recursive_resolver): Worker picked up task from 10.0.0.5:54788
+1771976784153 info(recursive_resolver): Resolve start: preview.redd.it. .aaaa
+1771976784153 info(recursive_resolver): Denied qtype 65 for preview.redd.it.
+1771976784153 info(recursive_resolver): Resolve done: preview.redd.it. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976784155 info(recursive_resolver): Received 33 bytes from 10.0.0.5:62630
+1771976784155 info(recursive_resolver): Received 36 bytes from 10.0.0.5:63170
+1771976784155 info(recursive_resolver): Received 36 bytes from 10.0.0.5:54143
+1771976784155 info(recursive_resolver): Worker picked up task from 10.0.0.5:626301771976784155 info(recursive_resolver): 1771976784156 info(recursive_resolver): Worker picked up task from 10.0.0.5:54143
+1771976784156 info(recursive_resolver): Resolve start: gql-fed.reddit.com. .aaaa
+1771976784156 info(recursive_resolver): Received 36 bytes from 10.0.0.5:50129
+
+1771976784156 info(recursive_resolver): 1771976784156 info(recursive_resolver): Resolve done: gql-fed.reddit.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+Worker picked up task from 10.0.0.5:63170
+1771976784156 info(recursive_resolver): Received 30 bytes from 10.0.0.5:54741
+1771976784156 info(recursive_resolver): 1771976784156 info(recursive_resolver): Denied qtype 65 for gql-fed.reddit.com.1771976784156 info(recursive_resolver): Resolve start: preview.redd.it. .a
+
+1771976784156 info(recursive_resolver): Worker picked up task from 10.0.0.5:54741
+Worker picked up task from 10.0.0.5:50129
+1771976784156 info(recursive_resolver): Resolve start: gql-fed.reddit.com. .a
+Received 30 bytes from 10.0.0.5:51375
+1771976784156 info(recursive_resolver): Resolve done: preview.redd.it. .a rcode=.no_error answers=0 elapsed_ms=01771976784156 info(recursive_resolver): Worker picked up task from 10.0.0.5:51375
+1771976784156 info(recursive_resolver): Resolve start: e.reddit.com. .aaaa
+1771976784156 info(recursive_resolver): Resolve done: gql-fed.reddit.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976784156 info(recursive_resolver): Received 30 bytes from 10.0.0.5:57515
+1771976784156 info(recursive_resolver): Resolve done: e.reddit.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+
+1771976784156 info(recursive_resolver): Denied qtype 65 for e.reddit.com.
+1771976784157 info(recursive_resolver): Worker picked up task from 10.0.0.5:57515
+1771976784157 info(recursive_resolver): Resolve start: e.reddit.com. .a
+1771976784157 info(recursive_resolver): Resolve done: e.reddit.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976784161 info(recursive_resolver): Resolve done: gql-fed.reddit.com. .a rcode=.no_error answers=2 elapsed_ms=1032
+1771976784271 info(recursive_resolver): Received 43 bytes from 10.0.0.5:56309
+1771976784271 info(recursive_resolver): Worker picked up task from 10.0.0.5:56309
+1771976784271 info(recursive_resolver): Denied qtype 65 for 25-courier.push.apple.com.
+1771976784272 info(recursive_resolver): Received 43 bytes from 10.0.0.5:60767
+1771976784272 info(recursive_resolver): Received 43 bytes from 10.0.0.5:50236
+1771976784272 info(recursive_resolver): Worker picked up task from 10.0.0.5:60767
+1771976784272 info(recursive_resolver): Resolve start: 25-courier.push.apple.com. .aaaa
+1771976784272 info(recursive_resolver): Resolve done: 25-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976784272 info(recursive_resolver): Worker picked up task from 10.0.0.5:50236
+1771976784273 info(recursive_resolver): Resolve start: 25-courier.push.apple.com. .a
+1771976784273 info(recursive_resolver): Resolve done: 25-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976784273 info(recursive_resolver): Resolve done: gql-fed.reddit.com. .aaaa rcode=.no_error answers=1 elapsed_ms=1148
+1771976784302 info(recursive_resolver): Received 43 bytes from 10.0.0.5:64228
+1771976784302 info(recursive_resolver): Worker picked up task from 10.0.0.5:64228
+1771976784302 info(recursive_resolver): Resolve start: 27-courier.push.apple.com. .aaaa
+1771976784305 info(recursive_resolver): Received 43 bytes from 10.0.0.5:54108
+1771976784305 info(recursive_resolver): Worker picked up task from 10.0.0.5:54108
+1771976784305 info(recursive_resolver): Resolve start: 27-courier.push.apple.com. .a
+1771976784315 info(recursive_resolver): Received 41 bytes from 10.0.0.5:64652
+1771976784316 info(recursive_resolver): Received 41 bytes from 10.0.0.5:54043
+1771976784316 info(recursive_resolver): Worker picked up task from 10.0.0.5:64652
+1771976784316 info(recursive_resolver): Worker picked up task from 10.0.0.5:54043
+1771976784316 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .aaaa
+1771976784316 info(recursive_resolver): Received 41 bytes from 10.0.0.5:55270
+1771976784316 info(recursive_resolver): Denied qtype 65 for gspe79-ssl.ls.apple.com.
+1771976784316 info(recursive_resolver): Received 36 bytes from 10.0.0.5:51601
+1771976784316 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61316
+1771976784316 info(recursive_resolver): 1771976784316 info(recursive_resolver): Worker picked up task from 10.0.0.5:61316
+1771976784316 info(recursive_resolver): Worker picked up task from 10.0.0.5:55270
+1771976784316 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .a
+1771976784316 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976784316 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .a rcode=.no_error answers=5 elapsed_ms=0
+1771976784316 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+Worker picked up task from 10.0.0.5:51601
+1771976784317 info(recursive_resolver): Denied qtype 64 for _dns.resolver.arpa.
+1771976784374 info(recursive_resolver): Received 39 bytes from 10.0.0.5:62539
+1771976784374 info(recursive_resolver): Received 39 bytes from 10.0.0.5:56656
+1771976784374 info(recursive_resolver): Worker picked up task from 10.0.0.5:62539
+1771976784374 info(recursive_resolver): Resolve start: outlook.office365.com. .aaaa
+1771976784374 info(recursive_resolver): Resolve done: outlook.office365.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976784374 info(recursive_resolver): Worker picked up task from 10.0.0.5:56656
+1771976784374 info(recursive_resolver): Resolve start: outlook.office365.com. .a
+1771976784374 info(recursive_resolver): Resolve done: outlook.office365.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976784525 info(recursive_resolver): Resolve done: 25-courier.push.apple.com. .a rcode=.no_error answers=5 elapsed_ms=1288
+1771976784674 info(recursive_resolver): Resolve done: 25-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=1441
+1771976784675 info(recursive_resolver): Received 39 bytes from 10.0.0.5:49964
+1771976784675 info(recursive_resolver): Resolve done: mask-h2.icloud.com. .aaaa rcode=.no_error answers=9 elapsed_ms=1021
+1771976784675 info(recursive_resolver): Worker picked up task from 10.0.0.5:49964
+1771976784675 info(recursive_resolver): Resolve done: mask-h2.icloud.com. .a rcode=.no_error answers=9 elapsed_ms=1018
+1771976784675 info(recursive_resolver): Denied qtype 65 for outlook.office365.com.
+1771976784690 info(recursive_resolver): Received 36 bytes from 10.0.0.5:56002
+1771976784690 info(recursive_resolver): Received 36 bytes from 10.0.0.5:62334
+1771976784690 info(recursive_resolver): Worker picked up task from 10.0.0.5:56002
+1771976784690 info(recursive_resolver): Worker picked up task from 10.0.0.5:62334
+1771976784690 info(recursive_resolver): Resolve start: mask-h2.icloud.com. .aaaa
+1771976784690 info(recursive_resolver): Received 36 bytes from 10.0.0.5:61327
+1771976784690 info(recursive_resolver): Worker picked up task from 10.0.0.5:61327
+1771976784690 info(recursive_resolver): Resolve start: mask-h2.icloud.com. .a
+1771976784690 info(recursive_resolver): Denied qtype 65 for mask-h2.icloud.com.
+1771976784691 info(recursive_resolver): Resolve done: mask-h2.icloud.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976784691 info(recursive_resolver): Resolve done: mask-h2.icloud.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976784734 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53239
+1771976784735 info(recursive_resolver): Worker picked up task from 10.0.0.5:53239
+1771976784735 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976784737 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53218
+1771976784737 info(recursive_resolver): Worker picked up task from 10.0.0.5:53218
+1771976784737 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976784738 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=0
+1771976784740 info(recursive_resolver): Received 38 bytes from 10.0.0.5:58426
+1771976784740 info(recursive_resolver): Worker picked up task from 10.0.0.5:58426
+1771976784740 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976784740 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=0
+1771976784788 info(recursive_resolver): Resolve done: preview.redd.it. .aaaa rcode=.no_error answers=2 elapsed_ms=1677
+1771976784827 info(recursive_resolver): Resolve done: preview.redd.it. .a rcode=.no_error answers=2 elapsed_ms=1714
+1771976784964 info(recursive_resolver): Resolve done: 27-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=658
+1771976784979 info(recursive_resolver): Resolve done: 27-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=677
+1771976785274 info(recursive_resolver): Received 31 bytes from 10.0.0.5:56042
+1771976785274 info(recursive_resolver): Worker picked up task from 10.0.0.5:56042
+1771976785274 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976785327 info(recursive_resolver): Received 43 bytes from 10.0.0.5:64228
+1771976785328 info(recursive_resolver): Worker picked up task from 10.0.0.5:64228
+1771976785328 info(recursive_resolver): Resolve start: 27-courier.push.apple.com. .aaaa
+1771976785328 info(recursive_resolver): Resolve done: 27-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976785329 info(recursive_resolver): Received 43 bytes from 10.0.0.5:54108
+1771976785329 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51390
+1771976785329 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976785329 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976785329 info(recursive_resolver): Worker picked up task from 10.0.0.5:54108
+1771976785329 info(recursive_resolver): Resolve start: 27-courier.push.apple.com. .a
+1771976785330 info(recursive_resolver): Resolve done: 27-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976785330 info(recursive_resolver): Worker picked up task from 10.0.0.5:51390
+1771976785330 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976785330 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976785330 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976785330 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976785330 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976785331 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976785331 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976785346 info(recursive_resolver): Received 43 bytes from 10.0.0.5:59591
+1771976785346 info(recursive_resolver): Worker picked up task from 10.0.0.5:59591
+1771976785347 info(recursive_resolver): Denied qtype 65 for 29-courier.push.apple.com.
+1771976785350 info(recursive_resolver): Received 43 bytes from 10.0.0.5:57053
+1771976785350 info(recursive_resolver): Worker picked up task from 10.0.0.5:57053
+1771976785350 info(recursive_resolver): Resolve start: 29-courier.push.apple.com. .aaaa
+1771976785352 info(recursive_resolver): Received 43 bytes from 10.0.0.5:60912
+1771976785352 info(recursive_resolver): Worker picked up task from 10.0.0.5:60912
+1771976785352 info(recursive_resolver): Resolve start: 29-courier.push.apple.com. .a
+1771976785454 info(recursive_resolver): Received 39 bytes from 10.0.0.5:58485
+1771976785455 info(recursive_resolver): Received 38 bytes from 10.0.0.5:63216
+1771976785455 info(recursive_resolver): Worker picked up task from 10.0.0.5:58485
+1771976785455 info(recursive_resolver): Denied qtype 65 for p157-quota.icloud.com.
+1771976785455 info(recursive_resolver): Worker picked up task from 10.0.0.5:63216
+1771976785455 info(recursive_resolver): Denied qtype 65 for bag.itunes.apple.com.
+1771976785517 info(recursive_resolver): Received 41 bytes from 10.0.0.5:54043
+1771976785518 info(recursive_resolver): Received 41 bytes from 10.0.0.5:55270
+1771976785518 info(recursive_resolver): Worker picked up task from 10.0.0.5:54043
+1771976785518 info(recursive_resolver): Worker picked up task from 10.0.0.5:55270
+1771976785518 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .a
+1771976785518 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .aaaa
+1771976785518 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976785519 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .a rcode=.no_error answers=5 elapsed_ms=0
+1771976785720 info(recursive_resolver): Received 33 bytes from 10.0.0.5:61893
+1771976785720 info(recursive_resolver): Worker picked up task from 10.0.0.5:61893
+1771976785720 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976785745 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53239
+1771976785748 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53218
+1771976785748 info(recursive_resolver): Received 38 bytes from 10.0.0.5:58426
+1771976785748 info(recursive_resolver): Worker picked up task from 10.0.0.5:53239
+1771976785749 info(recursive_resolver): Worker picked up task from 10.0.0.5:53218
+1771976785749 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976785749 info(recursive_resolver): Worker picked up task from 10.0.0.5:58426
+1771976785749 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976785749 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976785749 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=0
+1771976785749 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=0
+1771976786063 info(recursive_resolver): Resolve done: 29-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=713
+1771976786069 info(recursive_resolver): Resolve done: 29-courier.push.apple.com. .a rcode=.no_error answers=5 elapsed_ms=716
+1771976786245 info(recursive_resolver): Received 33 bytes from 10.0.0.5:59871
+1771976786246 info(recursive_resolver): Worker picked up task from 10.0.0.5:59871
+1771976786247 info(recursive_resolver): Denied qtype 65 for preview.redd.it.
+1771976786247 info(recursive_resolver): Received 36 bytes from 10.0.0.5:63170
+1771976786247 info(recursive_resolver): Received 30 bytes from 10.0.0.5:54741
+1771976786248 info(recursive_resolver): Worker picked up task from 10.0.0.5:63170
+1771976786249 info(recursive_resolver): Denied qtype 65 for gql-fed.reddit.com.
+1771976786249 info(recursive_resolver): Worker picked up task from 10.0.0.5:54741
+1771976786249 info(recursive_resolver): Denied qtype 65 for e.reddit.com.
+1771976786317 info(recursive_resolver): Received 43 bytes from 10.0.0.5:56309
+1771976786318 info(recursive_resolver): Worker picked up task from 10.0.0.5:56309
+1771976786319 info(recursive_resolver): Denied qtype 65 for 25-courier.push.apple.com.
+1771976786344 info(recursive_resolver): Received 43 bytes from 10.0.0.5:59591
+1771976786345 info(recursive_resolver): Received 43 bytes from 10.0.0.5:57053
+1771976786345 info(recursive_resolver): Received 43 bytes from 10.0.0.5:60912
+1771976786345 info(recursive_resolver): Worker picked up task from 10.0.0.5:59591
+1771976786345 info(recursive_resolver): Denied qtype 65 for 29-courier.push.apple.com.
+1771976786346 info(recursive_resolver): Worker picked up task from 10.0.0.5:57053
+1771976786346 info(recursive_resolver): Resolve start: 29-courier.push.apple.com. .aaaa
+1771976786347 info(recursive_resolver): Worker picked up task from 10.0.0.5:60912
+1771976786347 info(recursive_resolver): Resolve start: 29-courier.push.apple.com. .a
+1771976786347 info(recursive_resolver): Resolve done: 29-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=1
+1771976786347 info(recursive_resolver): Resolve done: 29-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976786560 info(recursive_resolver): Received 41 bytes from 10.0.0.5:54043
+1771976786561 info(recursive_resolver): Worker picked up task from 10.0.0.5:54043
+1771976786561 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .aaaa
+1771976786563 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=1
+1771976786563 info(recursive_resolver): Received 41 bytes from 10.0.0.5:55270
+1771976786563 info(recursive_resolver): Worker picked up task from 10.0.0.5:55270
+1771976786563 info(recursive_resolver): Resolve start: gspe79-ssl.ls.apple.com. .a
+1771976786564 info(recursive_resolver): Resolve done: gspe79-ssl.ls.apple.com. .a rcode=.no_error answers=5 elapsed_ms=0
+1771976786785 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52102
+1771976786785 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51291
+1771976786785 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50615
+1771976786786 info(recursive_resolver): Received 36 bytes from 10.0.0.5:56002
+1771976786786 info(recursive_resolver): Worker picked up task from 10.0.0.5:52102
+1771976786786 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976786786 info(recursive_resolver): Worker picked up task from 10.0.0.5:50615
+1771976786786 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976786786 info(recursive_resolver): Worker picked up task from 10.0.0.5:51291
+1771976786786 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976786786 info(recursive_resolver): Worker picked up task from 10.0.0.5:56002
+1771976786787 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=0
+1771976786787 info(recursive_resolver): Denied qtype 65 for mask-h2.icloud.com.
+1771976786787 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=0
+1771976787509 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976787510 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976787510 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976787510 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976787510 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976787510 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976787510 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=01771976787510 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+
+1771976787833 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53239
+1771976787833 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53218
+1771976787833 info(recursive_resolver): Worker picked up task from 10.0.0.5:53239
+1771976787833 info(recursive_resolver): Received 38 bytes from 10.0.0.5:58426
+1771976787833 info(recursive_resolver): Worker picked up task from 10.0.0.5:53218
+1771976787833 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976787834 info(recursive_resolver): Worker picked up task from 10.0.0.5:58426
+1771976787834 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976787834 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976787834 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=0
+1771976787834 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=0
+1771976788162 info(recursive_resolver): Received 43 bytes from 10.0.0.5:59929
+1771976788162 info(recursive_resolver): Worker picked up task from 10.0.0.5:59929
+1771976788162 info(recursive_resolver): Resolve start: 20-courier.push.apple.com. .aaaa
+1771976788165 info(recursive_resolver): Received 43 bytes from 10.0.0.5:53873
+1771976788165 info(recursive_resolver): Worker picked up task from 10.0.0.5:53873
+1771976788165 info(recursive_resolver): Resolve start: 20-courier.push.apple.com. .a
+1771976788518 info(recursive_resolver): Resolve done: 20-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=356
+1771976788522 info(recursive_resolver): Resolve done: 20-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=356
+1771976788540 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976788540 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976788541 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976788541 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976788542 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976788542 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976788542 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976788542 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976789180 info(recursive_resolver): Received 43 bytes from 10.0.0.5:59929
+1771976789180 info(recursive_resolver): Received 43 bytes from 10.0.0.5:53873
+1771976789180 info(recursive_resolver): Worker picked up task from 10.0.0.5:59929
+1771976789180 info(recursive_resolver): Worker picked up task from 10.0.0.5:53873
+1771976789180 info(recursive_resolver): Resolve start: 20-courier.push.apple.com. .a
+1771976789180 info(recursive_resolver): Resolve start: 20-courier.push.apple.com. .aaaa
+1771976789181 info(recursive_resolver): Resolve done: 20-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976789181 info(recursive_resolver): Resolve done: 20-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976789198 info(recursive_resolver): Received 43 bytes from 10.0.0.5:63225
+1771976789198 info(recursive_resolver): Worker picked up task from 10.0.0.5:63225
+1771976789198 info(recursive_resolver): Denied qtype 65 for 13-courier.push.apple.com.
+1771976789201 info(recursive_resolver): Received 43 bytes from 10.0.0.5:51562
+1771976789201 info(recursive_resolver): Worker picked up task from 10.0.0.5:51562
+1771976789201 info(recursive_resolver): Resolve start: 13-courier.push.apple.com. .aaaa
+1771976789203 info(recursive_resolver): Received 43 bytes from 10.0.0.5:59140
+1771976789203 info(recursive_resolver): Worker picked up task from 10.0.0.5:59140
+1771976789203 info(recursive_resolver): Resolve start: 13-courier.push.apple.com. .a
+1771976789387 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51390
+1771976789388 info(recursive_resolver): Worker picked up task from 10.0.0.5:51390
+1771976789388 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976789525 info(recursive_resolver): Resolve done: 13-courier.push.apple.com. .aaaa rcode=.no_error answers=2 elapsed_ms=324
+1771976789530 info(recursive_resolver): Resolve done: 13-courier.push.apple.com. .a rcode=.no_error answers=6 elapsed_ms=326
+1771976789999 info(recursive_resolver): Received 33 bytes from 10.0.0.5:61893
+1771976789999 info(recursive_resolver): Worker picked up task from 10.0.0.5:61893
+1771976789999 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976790308 info(recursive_resolver): Received 43 bytes from 10.0.0.5:63225
+1771976790308 info(recursive_resolver): Received 43 bytes from 10.0.0.5:51562
+1771976790308 info(recursive_resolver): Worker picked up task from 10.0.0.5:63225
+1771976790308 info(recursive_resolver): Received 43 bytes from 10.0.0.5:59140
+1771976790308 info(recursive_resolver): Worker picked up task from 10.0.0.5:51562
+1771976790308 info(recursive_resolver): Resolve start: 13-courier.push.apple.com. .aaaa
+1771976790308 info(recursive_resolver): Worker picked up task from 10.0.0.5:59140
+1771976790308 info(recursive_resolver): Resolve start: 13-courier.push.apple.com. .a
+1771976790308 info(recursive_resolver): Denied qtype 65 for 13-courier.push.apple.com.
+1771976790309 info(recursive_resolver): Resolve done: 13-courier.push.apple.com. .a rcode=.no_error answers=0 elapsed_ms=0
+1771976790309 info(recursive_resolver): Resolve done: 13-courier.push.apple.com. .aaaa rcode=.no_error answers=0 elapsed_ms=0
+1771976790315 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976790316 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976790316 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976790316 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976790316 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976790316 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976790316 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976790316 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976791535 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976791535 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976791535 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976791535 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976791536 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976791536 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976791536 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976791536 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976792047 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53239
+1771976792047 info(recursive_resolver): Worker picked up task from 10.0.0.5:53239
+1771976792047 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53218
+1771976792047 info(recursive_resolver): Worker picked up task from 10.0.0.5:53218
+1771976792047 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976792048 info(recursive_resolver): Received 38 bytes from 10.0.0.5:58426
+1771976792048 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=0
+1771976792048 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976792048 info(recursive_resolver): Worker picked up task from 10.0.0.5:58426
+1771976792048 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976792048 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=0
+1771976792230 info(recursive_resolver): Received 43 bytes from 10.0.0.5:63225
+1771976792231 info(recursive_resolver): Worker picked up task from 10.0.0.5:63225
+1771976792231 info(recursive_resolver): Denied qtype 65 for 13-courier.push.apple.com.
+1771976793481 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976793481 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976793481 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976793482 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976793482 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976793482 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976793482 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976793482 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976795017 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52102
+1771976795017 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51291
+1771976795017 info(recursive_resolver): Worker picked up task from 10.0.0.5:52102
+1771976795017 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50615
+1771976795017 info(recursive_resolver): Worker picked up task from 10.0.0.5:51291
+1771976795017 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976795018 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976795018 info(recursive_resolver): Worker picked up task from 10.0.0.5:50615
+1771976795018 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976795018 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=0
+1771976795018 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=0
+1771976797275 info(recursive_resolver): Received 33 bytes from 10.0.0.5:53571
+1771976797275 info(recursive_resolver): Worker picked up task from 10.0.0.5:53571
+1771976797276 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976797278 info(recursive_resolver): Received 27 bytes from 10.0.0.5:59255
+1771976797278 info(recursive_resolver): Worker picked up task from 10.0.0.5:59255
+1771976797278 info(recursive_resolver): Denied qtype 65 for nlthub.pk.
+1771976797281 info(recursive_resolver): Received 27 bytes from 10.0.0.5:61631
+1771976797281 info(recursive_resolver): Worker picked up task from 10.0.0.5:61631
+1771976797281 info(recursive_resolver): Resolve start: nlthub.pk. .aaaa
+1771976797284 info(recursive_resolver): Received 27 bytes from 10.0.0.5:53419
+1771976797284 info(recursive_resolver): Worker picked up task from 10.0.0.5:53419
+1771976797284 info(recursive_resolver): Resolve start: nlthub.pk. .a
+1771976797486 info(recursive_resolver): Resolve done: nlthub.pk. .a rcode=.no_error answers=2 elapsed_ms=202
+1771976797570 info(recursive_resolver): Resolve done: nlthub.pk. .aaaa rcode=.no_error answers=2 elapsed_ms=289
+1771976797579 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51390
+1771976797579 info(recursive_resolver): Worker picked up task from 10.0.0.5:51390
+1771976797579 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976797580 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976797580 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976797580 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976797580 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976797580 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976797580 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976797580 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976797580 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976798397 info(recursive_resolver): Received 33 bytes from 10.0.0.5:53571
+1771976798397 info(recursive_resolver): Received 27 bytes from 10.0.0.5:59255
+1771976798397 info(recursive_resolver): Worker picked up task from 10.0.0.5:53571
+1771976798397 info(recursive_resolver): Worker picked up task from 10.0.0.5:59255
+1771976798397 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976798398 info(recursive_resolver): Denied qtype 65 for nlthub.pk.
+1771976799219 info(recursive_resolver): Received 31 bytes from 10.0.0.5:51738
+1771976799219 info(recursive_resolver): Worker picked up task from 10.0.0.5:51738
+1771976799220 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976800239 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53239
+1771976800239 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53218
+1771976800239 info(recursive_resolver): Worker picked up task from 10.0.0.5:53239
+1771976800239 info(recursive_resolver): Received 38 bytes from 10.0.0.5:58426
+1771976800239 info(recursive_resolver): Worker picked up task from 10.0.0.5:53218
+1771976800239 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976800239 info(recursive_resolver): Worker picked up task from 10.0.0.5:58426
+1771976800240 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976800240 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976800240 info(recursive_resolver): Received 31 bytes from 10.0.0.5:51738
+1771976800240 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=01771976800240 info(recursive_resolver): Worker picked up task from 10.0.0.5:51738
+
+1771976800240 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=0
+1771976800240 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976800392 info(recursive_resolver): Received 33 bytes from 10.0.0.5:53571
+1771976800392 info(recursive_resolver): Received 27 bytes from 10.0.0.5:59255
+1771976800393 info(recursive_resolver): Worker picked up task from 10.0.0.5:53571
+1771976800393 info(recursive_resolver): Worker picked up task from 10.0.0.5:59255
+1771976800394 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976800394 info(recursive_resolver): Denied qtype 65 for nlthub.pk.
+1771976801475 info(recursive_resolver): Received 40 bytes from 10.0.0.5:58709
+1771976801475 info(recursive_resolver): Worker picked up task from 10.0.0.5:58709
+1771976801475 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976801478 info(recursive_resolver): Received 40 bytes from 10.0.0.5:52277
+1771976801478 info(recursive_resolver): Worker picked up task from 10.0.0.5:52277
+1771976801478 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976801478 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=1 elapsed_ms=0
+1771976801480 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50932
+1771976801480 info(recursive_resolver): Worker picked up task from 10.0.0.5:50932
+1771976801481 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976801481 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=2 elapsed_ms=0
+1771976802287 info(recursive_resolver): Received 31 bytes from 10.0.0.5:51738
+1771976802288 info(recursive_resolver): Worker picked up task from 10.0.0.5:51738
+1771976802288 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976802350 info(recursive_resolver): Received 40 bytes from 10.0.0.5:58709
+1771976802350 info(recursive_resolver): Worker picked up task from 10.0.0.5:58709
+1771976802350 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976802350 info(recursive_resolver): Received 40 bytes from 10.0.0.5:52277
+1771976802350 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50932
+1771976802350 info(recursive_resolver): Worker picked up task from 10.0.0.5:52277
+1771976802351 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976802350 info(recursive_resolver): Worker picked up task from 10.0.0.5:50932
+1771976802351 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976802351 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=1 elapsed_ms=0
+1771976802351 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=2 elapsed_ms=0
+1771976804385 info(recursive_resolver): Received 40 bytes from 10.0.0.5:58709
+1771976804386 info(recursive_resolver): Received 40 bytes from 10.0.0.5:52277
+1771976804386 info(recursive_resolver): Worker picked up task from 10.0.0.5:58709
+1771976804386 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50932
+1771976804386 info(recursive_resolver): Worker picked up task from 10.0.0.5:52277
+1771976804386 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976804386 info(recursive_resolver): Worker picked up task from 10.0.0.5:50932
+1771976804386 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976804386 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=1 elapsed_ms=0
+1771976804387 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=2 elapsed_ms=0
+1771976804386 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976805666 info(recursive_resolver): Received 40 bytes from 10.0.0.5:64362
+1771976805666 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50613
+1771976805666 info(recursive_resolver): Worker picked up task from 10.0.0.5:64362
+1771976805667 info(recursive_resolver): Worker picked up task from 10.0.0.5:50613
+1771976805667 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .a
+1771976805667 info(recursive_resolver): Resolve start: gspe1-ssl.ls.apple.com. .aaaa
+1771976805667 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .a rcode=.no_error answers=3 elapsed_ms=0
+1771976805667 info(recursive_resolver): Resolve done: gspe1-ssl.ls.apple.com. .aaaa rcode=.no_error answers=3 elapsed_ms=0
+1771976808534 info(recursive_resolver): Received 40 bytes from 10.0.0.5:58709
+1771976808534 info(recursive_resolver): Received 40 bytes from 10.0.0.5:52277
+1771976808534 info(recursive_resolver): Worker picked up task from 10.0.0.5:58709
+1771976808534 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50932
+1771976808534 info(recursive_resolver): Worker picked up task from 10.0.0.5:52277
+1771976808534 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976808534 info(recursive_resolver): Worker picked up task from 10.0.0.5:50932
+1771976808535 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976808535 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.
+1771976808535 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=2 elapsed_ms=0
+1771976808535 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=1 elapsed_ms=0
+1771976810382 info(recursive_resolver): Received 31 bytes from 10.0.0.5:52443
+1771976810382 info(recursive_resolver): Worker picked up task from 10.0.0.5:52443
+1771976810383 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976810384 info(recursive_resolver): Received 33 bytes from 10.0.0.5:58165
+1771976810384 info(recursive_resolver): Worker picked up task from 10.0.0.5:58165
+1771976810385 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976810387 info(recursive_resolver): Received 27 bytes from 10.0.0.5:61475
+1771976810387 info(recursive_resolver): Worker picked up task from 10.0.0.5:61475
+1771976810388 info(recursive_resolver): Denied qtype 65 for nlthub.pk.
+1771976811312 info(recursive_resolver): Received 46 bytes from 10.0.0.5:52102
+1771976811312 info(recursive_resolver): Received 46 bytes from 10.0.0.5:51291
+1771976811312 info(recursive_resolver): Worker picked up task from 10.0.0.5:52102
+1771976811312 info(recursive_resolver): Received 46 bytes from 10.0.0.5:50615
+1771976811312 info(recursive_resolver): Worker picked up task from 10.0.0.5:51291
+1771976811312 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .aaaa
+1771976811313 info(recursive_resolver): Worker picked up task from 10.0.0.5:50615
+1771976811313 info(recursive_resolver): Resolve start: apple-native-relay.apple.com. .a
+1771976811313 info(recursive_resolver): Denied qtype 65 for apple-native-relay.apple.com.
+1771976811313 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .aaaa rcode=.no_error answers=9 elapsed_ms=0
+1771976811313 info(recursive_resolver): Resolve done: apple-native-relay.apple.com. .a rcode=.no_error answers=9 elapsed_ms=0
+1771976811413 info(recursive_resolver): Received 31 bytes from 10.0.0.5:52443
+1771976811413 info(recursive_resolver): Worker picked up task from 10.0.0.5:52443
+1771976811414 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976811433 info(recursive_resolver): Received 33 bytes from 10.0.0.5:58165
+1771976811433 info(recursive_resolver): Received 27 bytes from 10.0.0.5:61475
+1771976811433 info(recursive_resolver): Worker picked up task from 10.0.0.5:58165
+1771976811433 info(recursive_resolver): Worker picked up task from 10.0.0.5:61475
+1771976811433 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976811434 info(recursive_resolver): Denied qtype 65 for nlthub.pk.
+1771976813567 info(recursive_resolver): Received 31 bytes from 10.0.0.5:52443
+1771976813567 info(recursive_resolver): Received 33 bytes from 10.0.0.5:58165
+1771976813567 info(recursive_resolver): Worker picked up task from 10.0.0.5:52443
+1771976813567 info(recursive_resolver): Received 27 bytes from 10.0.0.5:61475
+1771976813567 info(recursive_resolver): Worker picked up task from 10.0.0.5:58165
+1771976813567 info(recursive_resolver): Worker picked up task from 10.0.0.5:61475
+1771976813568 info(recursive_resolver): Denied qtype 65 for wps.apple.com.
+1771976813568 info(recursive_resolver): Denied qtype 65 for mask.icloud.com.
+1771976813568 info(recursive_resolver): Denied qtype 65 for nlthub.pk.
+1771976813645 info(recursive_resolver): Received 40 bytes from 10.0.0.5:51390
+1771976813645 info(recursive_resolver): Worker picked up task from 10.0.0.5:51390
+1771976813646 info(recursive_resolver): Denied qtype 65 for gspe1-ssl.ls.apple.com.
+1771976816421 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53239
+1771976816421 info(recursive_resolver): Received 38 bytes from 10.0.0.5:53218
+1771976816421 info(recursive_resolver): Received 38 bytes from 10.0.0.5:58426
+1771976816421 info(recursive_resolver): Worker picked up task from 10.0.0.5:53239
+1771976816422 info(recursive_resolver): Denied qtype 65 for netcts.cdn-apple.com.
+1771976816422 info(recursive_resolver): Worker picked up task from 10.0.0.5:53218
+1771976816422 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .aaaa
+1771976816423 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .aaaa rcode=.no_error answers=4 elapsed_ms=0
+1771976816423 info(recursive_resolver): Worker picked up task from 10.0.0.5:58426
+1771976816423 info(recursive_resolver): Resolve start: netcts.cdn-apple.com. .a
+1771976816423 info(recursive_resolver): Resolve done: netcts.cdn-apple.com. .a rcode=.no_error answers=4 elapsed_ms=0
+1771976816516 info(recursive_resolver): Received 40 bytes from 10.0.0.5:58709
+1771976816516 info(recursive_resolver): Received 40 bytes from 10.0.0.5:52277
+1771976816516 info(recursive_resolver): Received 40 bytes from 10.0.0.5:50932
+1771976816516 info(recursive_resolver): Worker picked up task from 10.0.0.5:58709
+1771976816518 info(recursive_resolver): Worker picked up task from 10.0.0.5:50932
+1771976816518 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .a
+1771976816518 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .a rcode=.no_error answers=2 elapsed_ms=0
+1771976816516 info(recursive_resolver): Worker picked up task from 10.0.0.5:52277
+1771976816518 info(recursive_resolver): Resolve start: gsp64-ssl.ls.apple.com. .aaaa
+1771976816519 info(recursive_resolver): Resolve done: gsp64-ssl.ls.apple.com. .aaaa rcode=.no_error answers=1 elapsed_ms=0
+1771976816519 info(recursive_resolver): Denied qtype 65 for gsp64-ssl.ls.apple.com.

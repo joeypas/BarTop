@@ -1,0 +1,26 @@
+flowchart TD
+    A[Start] --> B[Init Io.Threaded + bind UDP socket]
+    B --> C[Resolve upstream DNS server]
+    C --> D{Main loop: receive UDP packet}
+    D -->|timeout| D
+    D -->|packet| E[Spawn async task]
+    E --> F[Decode DNS message]
+    F -->|decode error| G[Send FORMERR]
+    F -->|ok| H[Build response header + clone questions]
+    H --> I{Single question?}
+    I -->|no| J[Forward to upstream]
+    I -->|yes| K[Cache lookup]
+    K -->|hit + valid| L[Clone records, reduce TTLs]
+    L --> M[Send response]
+    K -->|miss/expired| J
+    J -->|timeout/error| N[Send SERVFAIL]
+    J -->|ok| O[Decode upstream response]
+    O --> P{NOERROR & single question?}
+    P -->|yes| Q[Store in cache with stored_at]
+    P -->|no| R[Skip cache]
+    Q --> S[Clone records, adjust TTLs]
+    R --> S
+    S --> M
+    G --> T[Done]
+    N --> T
+    M --> T

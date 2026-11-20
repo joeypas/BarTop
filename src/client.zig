@@ -91,10 +91,11 @@ pub fn printResponse(
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
+    const io = init.io;
 
-    var threaded = std.Io.Threaded.init(allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
+    // var threaded = std.Io.Threaded.init(allocator, .{});
+    // defer threaded.deinit();
+    // const io = threaded.io();
 
     var rand_source = std.Random.IoSource{ .io = io };
     const rng = rand_source.interface();

@@ -557,6 +557,13 @@ pub const Record = struct {
             .rdata = rdata,
         };
     }
+
+    pub fn setRData(self: *Record, allocator: Allocator, rdata: *const RData) !void {
+        const next = try rdata.clone(allocator);
+        self.rdata.deinit(allocator);
+        self.rdata = next;
+        self.rdlength = @intCast(self.rdata.wireLen());
+    }
 };
 
 pub const RDataRef = struct {
